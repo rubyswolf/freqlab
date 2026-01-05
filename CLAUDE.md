@@ -71,12 +71,13 @@ claude -p "message" \
 - Claude Code CLI integration
 - Chat interface with streaming output
 
-### Phase 3: Build System (Next)
-- `cargo xtask bundle` execution
-- Build output streaming
-- Error detection and "Fix with Claude" flow
-- Copy artifacts to output folder
-- **Shared Cargo workspace for fast builds**
+### Phase 3: Build System ✅
+- Shared Cargo workspace at `~/VSTWorkshop/` for fast incremental builds
+- `cargo xtask bundle` execution from workspace root
+- Build output streaming to output panel
+- Toast notifications for success/failure
+- "Fix with Claude" button sends build errors to chat
+- Copy artifacts to `~/VSTWorkshop/output/`
 
 ### Phase 4: Version Control
 - Git integration for projects

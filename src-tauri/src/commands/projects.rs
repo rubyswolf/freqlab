@@ -18,22 +18,80 @@ pub struct CreateProjectInput {
     pub description: String,
 }
 
-fn get_workspace_path() -> PathBuf {
+pub fn get_workspace_path() -> PathBuf {
     let home = std::env::var("HOME").unwrap_or_default();
     PathBuf::from(home).join("VSTWorkshop")
+}
+
+pub fn get_output_path() -> PathBuf {
+    get_workspace_path().join("output")
 }
 
 fn get_projects_path() -> PathBuf {
     get_workspace_path().join("projects")
 }
 
-/// Ensure the workspace directories exist
-fn ensure_workspace() -> Result<(), String> {
+/// Ensure the workspace directories exist and workspace Cargo.toml is set up
+pub fn ensure_workspace() -> Result<(), String> {
+    let workspace = get_workspace_path();
     let projects = get_projects_path();
-    let output = get_workspace_path().join("output");
+    let output = workspace.join("output");
+    let xtask_dir = workspace.join("xtask/src");
 
     fs::create_dir_all(&projects).map_err(|e| format!("Failed to create projects dir: {}", e))?;
     fs::create_dir_all(&output).map_err(|e| format!("Failed to create output dir: {}", e))?;
+    fs::create_dir_all(&xtask_dir).map_err(|e| format!("Failed to create xtask dir: {}", e))?;
+
+    // Create workspace root Cargo.toml if it doesn't exist
+    let workspace_cargo = workspace.join("Cargo.toml");
+    if !workspace_cargo.exists() {
+        let cargo_content = r#"[workspace]
+members = ["projects/*", "xtask"]
+resolver = "2"
+"#;
+        fs::write(&workspace_cargo, cargo_content)
+            .map_err(|e| format!("Failed to create workspace Cargo.toml: {}", e))?;
+    }
+
+    // Create shared xtask Cargo.toml if it doesn't exist
+    let xtask_cargo = workspace.join("xtask/Cargo.toml");
+    if !xtask_cargo.exists() {
+        let xtask_content = r#"[package]
+name = "xtask"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+nih_plug_xtask = { git = "https://github.com/robbert-vdh/nih-plug.git" }
+"#;
+        fs::write(&xtask_cargo, xtask_content)
+            .map_err(|e| format!("Failed to create xtask Cargo.toml: {}", e))?;
+    }
+
+    // Create shared xtask main.rs if it doesn't exist
+    let xtask_main = workspace.join("xtask/src/main.rs");
+    if !xtask_main.exists() {
+        let main_content = r#"fn main() -> nih_plug_xtask::Result<()> {
+    nih_plug_xtask::main()
+}
+"#;
+        fs::write(&xtask_main, main_content)
+            .map_err(|e| format!("Failed to create xtask main.rs: {}", e))?;
+    }
+
+    // Create .cargo/config.toml with xtask alias if it doesn't exist
+    let cargo_config_dir = workspace.join(".cargo");
+    fs::create_dir_all(&cargo_config_dir)
+        .map_err(|e| format!("Failed to create .cargo dir: {}", e))?;
+
+    let cargo_config = cargo_config_dir.join("config.toml");
+    if !cargo_config.exists() {
+        let config_content = r#"[alias]
+xtask = "run --package xtask --release --"
+"#;
+        fs::write(&cargo_config, config_content)
+            .map_err(|e| format!("Failed to create cargo config: {}", e))?;
+    }
 
     Ok(())
 }
@@ -103,8 +161,6 @@ pub async fn create_project(input: CreateProjectInput) -> Result<ProjectMeta, St
     // Create directory structure
     fs::create_dir_all(project_path.join("src"))
         .map_err(|e| format!("Failed to create src dir: {}", e))?;
-    fs::create_dir_all(project_path.join("xtask/src"))
-        .map_err(|e| format!("Failed to create xtask dir: {}", e))?;
     fs::create_dir_all(project_path.join(".vstworkshop"))
         .map_err(|e| format!("Failed to create .vstworkshop dir: {}", e))?;
 
@@ -112,7 +168,7 @@ pub async fn create_project(input: CreateProjectInput) -> Result<ProjectMeta, St
     let pascal_name = to_pascal_case(&input.name);
     let vst3_id = generate_vst3_id(&input.name);
 
-    // Write Cargo.toml
+    // Write Cargo.toml (project is a workspace member, no [workspace] section needed)
     let cargo_toml = format!(
         r#"[package]
 name = "{snake_name}"
@@ -130,9 +186,6 @@ nih_plug = {{ git = "https://github.com/robbert-vdh/nih-plug.git", features = ["
 [profile.release]
 lto = "thin"
 strip = "symbols"
-
-[workspace]
-members = ["xtask"]
 "#,
         snake_name = snake_name,
         description = input.description.replace('"', "\\\"")
@@ -247,26 +300,6 @@ nih_export_vst3!({pascal_name});
     );
     fs::write(project_path.join("src/lib.rs"), lib_rs)
         .map_err(|e| format!("Failed to write lib.rs: {}", e))?;
-
-    // Write xtask/Cargo.toml
-    let xtask_cargo = r#"[package]
-name = "xtask"
-version = "0.1.0"
-edition = "2021"
-
-[dependencies]
-nih_plug_xtask = { git = "https://github.com/robbert-vdh/nih-plug.git" }
-"#;
-    fs::write(project_path.join("xtask/Cargo.toml"), xtask_cargo)
-        .map_err(|e| format!("Failed to write xtask/Cargo.toml: {}", e))?;
-
-    // Write xtask/src/main.rs
-    let xtask_main = r#"fn main() -> nih_plug_xtask::Result<()> {
-    nih_plug_xtask::main()
-}
-"#;
-    fs::write(project_path.join("xtask/src/main.rs"), xtask_main)
-        .map_err(|e| format!("Failed to write xtask/src/main.rs: {}", e))?;
 
     // Create metadata
     let now = chrono::Utc::now().to_rfc3339();

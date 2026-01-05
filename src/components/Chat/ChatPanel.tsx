@@ -1,9 +1,10 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { ChatMessage } from './ChatMessage';
 import { ChatInput } from './ChatInput';
 import { useOutputStore } from '../../stores/outputStore';
+import { useChatStore } from '../../stores/chatStore';
 import type { ChatMessage as ChatMessageType } from '../../types';
 import type { ProjectMeta } from '../../types';
 
@@ -23,13 +24,14 @@ export function ChatPanel({ project }: ChatPanelProps) {
   const [streamingContent, setStreamingContent] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { addLine, setActive, clear } = useOutputStore();
+  const { pendingMessage, clearPendingMessage } = useChatStore();
 
   // Auto-scroll to bottom when messages change
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, streamingContent]);
 
-  const handleSend = async (content: string) => {
+  const handleSend = useCallback(async (content: string) => {
     // Add user message
     const userMessage: ChatMessageType = {
       id: crypto.randomUUID(),
@@ -94,7 +96,15 @@ export function ChatPanel({ project }: ChatPanelProps) {
       addLine('');
       addLine('[Done]');
     }
-  };
+  }, [project, addLine, setActive, clear]);
+
+  // Watch for pending messages (e.g., from "Fix with Claude" button)
+  useEffect(() => {
+    if (pendingMessage && !isLoading) {
+      handleSend(pendingMessage);
+      clearPendingMessage();
+    }
+  }, [pendingMessage, isLoading, handleSend, clearPendingMessage]);
 
   return (
     <div className="h-full flex flex-col bg-bg-secondary rounded-xl border border-border overflow-hidden">

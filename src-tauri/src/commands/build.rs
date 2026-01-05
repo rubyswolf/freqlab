@@ -1,0 +1,194 @@
+use serde::Serialize;
+use std::process::Stdio;
+use tauri::Emitter;
+use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::process::Command;
+
+use super::projects::{ensure_workspace, get_output_path, get_workspace_path};
+
+#[derive(Serialize, Clone)]
+pub struct BuildResult {
+    pub success: bool,
+    pub output_path: Option<String>,
+    pub error: Option<String>,
+}
+
+#[derive(Serialize, Clone)]
+#[serde(tag = "type")]
+pub enum BuildStreamEvent {
+    #[serde(rename = "start")]
+    Start,
+    #[serde(rename = "output")]
+    Output { line: String },
+    #[serde(rename = "done")]
+    Done {
+        success: bool,
+        output_path: Option<String>,
+    },
+    #[serde(rename = "error")]
+    Error { message: String },
+}
+
+/// Build a plugin project using cargo xtask bundle
+#[tauri::command]
+pub async fn build_project(
+    project_name: String,
+    window: tauri::Window,
+) -> Result<BuildResult, String> {
+    // Ensure workspace structure exists (creates shared xtask if needed)
+    ensure_workspace()?;
+
+    let workspace_path = get_workspace_path();
+    let output_path = get_output_path();
+
+    // Emit start event
+    let _ = window.emit("build-stream", BuildStreamEvent::Start);
+
+    // Run cargo xtask bundle from workspace root
+    let mut child = Command::new("cargo")
+        .current_dir(&workspace_path)
+        .args(["xtask", "bundle", &project_name, "--release"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("Failed to spawn cargo: {}", e))?;
+
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or("Failed to capture stdout")?;
+
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or("Failed to capture stderr")?;
+
+    let mut stdout_reader = BufReader::new(stdout).lines();
+    let mut stderr_reader = BufReader::new(stderr).lines();
+
+    let mut error_output = String::new();
+
+    // Read stdout and stderr concurrently
+    loop {
+        tokio::select! {
+            line = stdout_reader.next_line() => {
+                match line {
+                    Ok(Some(text)) => {
+                        let _ = window.emit("build-stream", BuildStreamEvent::Output {
+                            line: text,
+                        });
+                    }
+                    Ok(None) => break,
+                    Err(e) => {
+                        let _ = window.emit("build-stream", BuildStreamEvent::Error {
+                            message: e.to_string(),
+                        });
+                        break;
+                    }
+                }
+            }
+            line = stderr_reader.next_line() => {
+                match line {
+                    Ok(Some(text)) => {
+                        error_output.push_str(&text);
+                        error_output.push('\n');
+                        // Emit stderr as output too (cargo outputs to stderr)
+                        let _ = window.emit("build-stream", BuildStreamEvent::Output {
+                            line: text,
+                        });
+                    }
+                    Ok(None) => {}
+                    Err(_) => {}
+                }
+            }
+        }
+    }
+
+    // Wait for process to complete
+    let status = child
+        .wait()
+        .await
+        .map_err(|e| format!("Failed to wait for cargo: {}", e))?;
+
+    if status.success() {
+        // Copy artifacts to output folder
+        let bundled_path = workspace_path.join("target/bundled");
+
+        // Look for .vst3 and .clap bundles
+        let mut copied_files = Vec::new();
+
+        if let Ok(entries) = std::fs::read_dir(&bundled_path) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                let file_name = path.file_name().unwrap_or_default().to_string_lossy();
+
+                // Check if this is our plugin's bundle
+                if file_name.contains(&project_name) || file_name.contains(&project_name.replace('-', "_")) {
+                    let dest = output_path.join(path.file_name().unwrap());
+
+                    // Copy directory (for .vst3/.clap bundles) or file
+                    if path.is_dir() {
+                        copy_dir_all(&path, &dest).ok();
+                    } else {
+                        std::fs::copy(&path, &dest).ok();
+                    }
+                    copied_files.push(dest.to_string_lossy().to_string());
+                }
+            }
+        }
+
+        let output_str = output_path.to_string_lossy().to_string();
+
+        let _ = window.emit("build-stream", BuildStreamEvent::Done {
+            success: true,
+            output_path: Some(output_str.clone()),
+        });
+
+        Ok(BuildResult {
+            success: true,
+            output_path: Some(output_str),
+            error: None,
+        })
+    } else {
+        let _ = window.emit("build-stream", BuildStreamEvent::Done {
+            success: false,
+            output_path: None,
+        });
+
+        Ok(BuildResult {
+            success: false,
+            output_path: None,
+            error: Some(error_output),
+        })
+    }
+}
+
+/// Recursively copy a directory
+fn copy_dir_all(src: &std::path::Path, dst: &std::path::Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(dst)?;
+    for entry in std::fs::read_dir(src)? {
+        let entry = entry?;
+        let ty = entry.file_type()?;
+        if ty.is_dir() {
+            copy_dir_all(&entry.path(), &dst.join(entry.file_name()))?;
+        } else {
+            std::fs::copy(entry.path(), dst.join(entry.file_name()))?;
+        }
+    }
+    Ok(())
+}
+
+/// Open the output folder in Finder
+#[tauri::command]
+pub async fn open_output_folder() -> Result<(), String> {
+    let output_path = get_output_path();
+
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg(&output_path)
+            .spawn()
+            .map_err(|e| format!("Failed to open folder: {}", e))?;
+    }
+    Ok(())
+}

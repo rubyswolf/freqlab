@@ -24,6 +24,8 @@ pub fn run() {
             commands::projects::get_workspace_path_string,
             commands::claude::send_to_claude,
             commands::claude::test_claude_cli,
+            commands::build::build_project,
+            commands::build::open_output_folder,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
