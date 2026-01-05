@@ -16,6 +16,14 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::prerequisites::check_prerequisites,
+            commands::projects::create_project,
+            commands::projects::list_projects,
+            commands::projects::get_project,
+            commands::projects::delete_project,
+            commands::projects::open_project_folder,
+            commands::projects::get_workspace_path_string,
+            commands::claude::send_to_claude,
+            commands::claude::test_claude_cli,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

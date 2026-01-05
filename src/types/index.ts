@@ -27,14 +27,14 @@ export interface ProjectMeta {
   id: string;
   name: string;
   description: string;
-  version: string;
-  author: string;
-  category: string;
-  createdAt: string;
-  updatedAt: string;
-  icon: string;
-  tags: string[];
-  buildFormats: string[];
+  created_at: string;
+  updated_at: string;
+  path: string;
+}
+
+export interface CreateProjectInput {
+  name: string;
+  description: string;
 }
 
 export interface ChatMessage {
