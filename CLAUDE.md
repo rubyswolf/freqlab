@@ -79,17 +79,30 @@ claude -p "message" \
 - "Fix with Claude" button sends build errors to chat
 - Copy artifacts to `~/VSTWorkshop/output/`
 
-### Phase 4: Version Control
-- Git integration for projects
-- Version bump modal
-- Changelog generation from chat history
-- **Persistent chat history storage**
+### Phase 4: Version Control (Next)
+- Git safety net (auto-init, auto-commit after Claude edits)
+- "Revert to here" on each Claude response (non-destructive)
+- Visual dimming of reverted messages
+- Persistent chat history in `.vstworkshop/chat.json`
 
 ### Phase 5: Polish
+- Version bump modal
+- Changelog generation from commits
 - DAW setup guides
-- Settings panel
+- Settings panel with configurable options:
+  - Custom output folder path
+  - Auto-copy to standard plugin locations:
+    - `~/Library/Audio/Plug-Ins/VST3/`
+    - `~/Library/Audio/Plug-Ins/CLAP/`
 - Keyboard shortcuts
 - Error handling improvements
+
+### Phase 6: FL Studio VST3 Compatibility
+- Investigate VST3 crash in FL Studio (CLAP works fine)
+- Debug with LLDB attached to FL Studio to find root cause
+- Check nih-plug GitHub issues for similar reports
+- Test VST3 subcategories, class ID formats
+- Ensure broad DAW compatibility for generated plugins
 
 ## Useful Commands
 

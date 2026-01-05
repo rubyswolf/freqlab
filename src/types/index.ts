@@ -44,4 +44,12 @@ export interface ChatMessage {
   timestamp: string;
   filesModified?: string[];
   summary?: string;
+  commitHash?: string;
+  version?: number;  // Version number for commits (1, 2, 3...) - only set if files were changed
+  reverted: boolean;
+}
+
+export interface ChatState {
+  messages: ChatMessage[];
+  activeVersion: number | null;
 }

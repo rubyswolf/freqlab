@@ -3,13 +3,14 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { ChatMessage } from './ChatMessage';
 import { ChatInput } from './ChatInput';
-import { useOutputStore } from '../../stores/outputStore';
+import { useProjectOutput } from '../../stores/outputStore';
 import { useChatStore } from '../../stores/chatStore';
-import type { ChatMessage as ChatMessageType } from '../../types';
-import type { ProjectMeta } from '../../types';
+import { useProjectBusyStore } from '../../stores/projectBusyStore';
+import type { ChatMessage as ChatMessageType, ChatState, ProjectMeta } from '../../types';
 
 interface ClaudeStreamEvent {
   type: 'start' | 'text' | 'error' | 'done';
+  project_path: string;
   content?: string;
   message?: string;
 }
@@ -20,11 +21,84 @@ interface ChatPanelProps {
 
 export function ChatPanel({ project }: ChatPanelProps) {
   const [messages, setMessages] = useState<ChatMessageType[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
+  const [activeVersion, setActiveVersion] = useState<number | null>(null);
   const [streamingContent, setStreamingContent] = useState('');
+  const [isHistoryLoaded, setIsHistoryLoaded] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const { addLine, setActive, clear } = useOutputStore();
+  const messagesRef = useRef<ChatMessageType[]>([]);
+  const isSavingRef = useRef(false);
+  const saveQueueRef = useRef<ChatMessageType[] | null>(null);
+  const streamingContentRef = useRef('');
+  const { addLine, setActive, clear } = useProjectOutput(project.path);
   const { pendingMessage, clearPendingMessage } = useChatStore();
+  const { claudeBusyPath, setClaudeBusy, clearClaudeBusyIfMatch, isProjectBusy } = useProjectBusyStore();
+
+  // Check if THIS project is currently busy with Claude
+  const isLoading = claudeBusyPath === project.path;
+  // Check if project is busy with anything (Claude or building)
+  const isBusy = isProjectBusy(project.path);
+
+  // Load chat history when project changes
+  useEffect(() => {
+    // Reset state when switching projects
+    setMessages([]);
+    setActiveVersion(null);
+    setIsHistoryLoaded(false);
+    setStreamingContent('');
+
+    async function loadHistory() {
+      try {
+        const state = await invoke<ChatState>('load_chat_history', {
+          projectPath: project.path,
+        });
+        setMessages(state.messages);
+        setActiveVersion(state.activeVersion);
+      } catch (err) {
+        console.error('Failed to load chat history:', err);
+      }
+      setIsHistoryLoaded(true);
+    }
+    loadHistory();
+  }, [project.path]);
+
+  // Save chat history when messages change (after initial load)
+  // Uses a queue to prevent race conditions when multiple saves are triggered
+  useEffect(() => {
+    if (!isHistoryLoaded || messages.length === 0) return;
+
+    const saveMessages = async (toSave: ChatMessageType[]) => {
+      if (isSavingRef.current) {
+        // Queue this save for later
+        saveQueueRef.current = toSave;
+        return;
+      }
+
+      isSavingRef.current = true;
+      try {
+        await invoke('save_chat_history', {
+          projectPath: project.path,
+          messages: toSave,
+        });
+      } catch (err) {
+        console.error('Failed to save chat history:', err);
+      } finally {
+        isSavingRef.current = false;
+        // Check if there's a queued save
+        if (saveQueueRef.current) {
+          const queued = saveQueueRef.current;
+          saveQueueRef.current = null;
+          saveMessages(queued);
+        }
+      }
+    };
+
+    saveMessages(messages);
+  }, [messages, project.path, isHistoryLoaded]);
+
+  // Keep messagesRef in sync with state for use in callbacks
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
 
   // Auto-scroll to bottom when messages change
   useEffect(() => {
@@ -32,16 +106,33 @@ export function ChatPanel({ project }: ChatPanelProps) {
   }, [messages, streamingContent]);
 
   const handleSend = useCallback(async (content: string) => {
+    // Use ref for current messages (avoids stale closure issues)
+    const currentMessages = messagesRef.current;
+
     // Add user message
     const userMessage: ChatMessageType = {
       id: crypto.randomUUID(),
       role: 'user',
       content,
       timestamp: new Date().toISOString(),
+      reverted: false,
     };
-    setMessages((prev) => [...prev, userMessage]);
-    setIsLoading(true);
+    const messagesWithUser = [...currentMessages, userMessage];
+    setMessages(messagesWithUser);
+    messagesRef.current = messagesWithUser; // Keep ref in sync immediately
+    setClaudeBusy(project.path);
     setStreamingContent('');
+    streamingContentRef.current = '';
+
+    // Save user message immediately (don't rely on effect in case of unmount)
+    try {
+      await invoke('save_chat_history', {
+        projectPath: project.path,
+        messages: messagesWithUser,
+      });
+    } catch (err) {
+      console.error('Failed to save user message:', err);
+    }
 
     // Clear and activate output panel
     clear();
@@ -49,14 +140,19 @@ export function ChatPanel({ project }: ChatPanelProps) {
     addLine(`> Sending to Claude: "${content.substring(0, 50)}${content.length > 50 ? '...' : ''}"`);
     addLine('');
 
-    // Listen for streaming events
+    // Listen for streaming events - filter by project path to prevent cross-talk
     const unlisten = await listen<ClaudeStreamEvent>('claude-stream', (event) => {
       const data = event.payload;
+      // Only process events for THIS project
+      if (data.project_path !== project.path) return;
+
       if (data.type === 'text' && data.content) {
-        setStreamingContent((prev) => prev + data.content + '\n');
+        streamingContentRef.current += data.content + '\n';
+        setStreamingContent(streamingContentRef.current);
         addLine(data.content);
       } else if (data.type === 'error' && data.message) {
-        setStreamingContent((prev) => prev + `\nError: ${data.message}`);
+        streamingContentRef.current += `\nError: ${data.message}`;
+        setStreamingContent(streamingContentRef.current);
         addLine(`[ERROR] ${data.message}`);
       } else if (data.type === 'start') {
         addLine('[Claude started working...]');
@@ -64,21 +160,48 @@ export function ChatPanel({ project }: ChatPanelProps) {
     });
 
     try {
-      const response = await invoke<{ content: string }>('send_to_claude', {
+      const response = await invoke<{ content: string; commit_hash?: string }>('send_to_claude', {
         projectPath: project.path,
         projectName: project.name,
         description: project.description,
         message: content,
       });
 
-      // Add assistant message
+      // Calculate next version number if this response has a commit (files were changed)
+      // Version is based on count of previous commits that have version numbers
+      const nextVersion = response.commit_hash
+        ? messagesWithUser.filter((m) => m.version).length + 1
+        : undefined;
+
+      // Add assistant message with commit hash for version control
       const assistantMessage: ChatMessageType = {
         id: crypto.randomUUID(),
         role: 'assistant',
-        content: response.content.trim() || streamingContent.trim(),
+        content: response.content.trim() || streamingContentRef.current.trim(),
         timestamp: new Date().toISOString(),
+        commitHash: response.commit_hash,
+        version: nextVersion,
+        reverted: false,
       };
-      setMessages((prev) => [...prev, assistantMessage]);
+      const messagesWithAssistant = [...messagesWithUser, assistantMessage];
+      setMessages(messagesWithAssistant);
+      messagesRef.current = messagesWithAssistant; // Keep ref in sync immediately
+
+      // Save assistant message explicitly (in case component unmounts)
+      await invoke('save_chat_history', {
+        projectPath: project.path,
+        messages: messagesWithAssistant,
+      });
+
+      // Update active version if this created a new version (AFTER saving messages)
+      if (nextVersion) {
+        setActiveVersion(nextVersion);
+        // Persist activeVersion to disk so it survives reload
+        await invoke('update_active_version', {
+          projectPath: project.path,
+          version: nextVersion,
+        });
+      }
     } catch (err) {
       // Add error message
       const errorMessage: ChatMessageType = {
@@ -86,17 +209,28 @@ export function ChatPanel({ project }: ChatPanelProps) {
         role: 'assistant',
         content: `Sorry, something went wrong: ${err}`,
         timestamp: new Date().toISOString(),
+        reverted: false,
       };
-      setMessages((prev) => [...prev, errorMessage]);
+      const messagesWithError = [...messagesWithUser, errorMessage];
+      setMessages(messagesWithError);
+      messagesRef.current = messagesWithError; // Keep ref in sync immediately
+
+      // Save error message explicitly
+      await invoke('save_chat_history', {
+        projectPath: project.path,
+        messages: messagesWithError,
+      }).catch((e) => console.error('Failed to save error message:', e));
     } finally {
       unlisten();
-      setIsLoading(false);
+      // Only clear if we're still the active Claude session (prevents race with other projects)
+      clearClaudeBusyIfMatch(project.path);
       setStreamingContent('');
+      streamingContentRef.current = '';
       setActive(false);
       addLine('');
       addLine('[Done]');
     }
-  }, [project, addLine, setActive, clear]);
+  }, [project, addLine, setActive, clear, setClaudeBusy, clearClaudeBusyIfMatch]);
 
   // Watch for pending messages (e.g., from "Fix with Claude" button)
   useEffect(() => {
@@ -105,6 +239,36 @@ export function ChatPanel({ project }: ChatPanelProps) {
       clearPendingMessage();
     }
   }, [pendingMessage, isLoading, handleSend, clearPendingMessage]);
+
+  // Handle changing to a specific version (works for both forward and backward)
+  const handleVersionChange = useCallback(async (version: number, commitHash: string) => {
+    setClaudeBusy(project.path);
+
+    // Calculate effective active version (same logic as render)
+    const latestVersion = messages.reduce((max, m) =>
+      m.version && m.version > max ? m.version : max, 0);
+    const effectiveActive = activeVersion ?? latestVersion;
+
+    const direction = version < effectiveActive ? 'Reverting' : 'Restoring';
+    addLine(`> ${direction} to v${version}...`);
+
+    try {
+      // Call backend to checkout the version and update activeVersion
+      const state = await invoke<ChatState>('set_active_version', {
+        projectPath: project.path,
+        version,
+        commitHash,
+      });
+
+      setMessages(state.messages);
+      setActiveVersion(state.activeVersion);
+      addLine(`[${direction === 'Reverting' ? 'Reverted' : 'Restored'} to v${version}]`);
+    } catch (err) {
+      addLine(`[ERROR] Failed to change version: ${err}`);
+    } finally {
+      clearClaudeBusyIfMatch(project.path);
+    }
+  }, [project.path, messages, activeVersion, addLine, setClaudeBusy, clearClaudeBusyIfMatch]);
 
   return (
     <div className="h-full flex flex-col bg-bg-secondary rounded-xl border border-border overflow-hidden">
@@ -131,9 +295,45 @@ export function ChatPanel({ project }: ChatPanelProps) {
           </div>
         ) : (
           <>
-            {messages.map((message) => (
-              <ChatMessage key={message.id} message={message} />
-            ))}
+            {messages.map((message) => {
+              // Get max version to treat as "current" when activeVersion is null
+              const latestVersion = messages.reduce((max, m) =>
+                m.version && m.version > max ? m.version : max, 0);
+              const effectiveActiveVersion = activeVersion ?? latestVersion;
+
+              // Determine if this version is "inactive" (ahead of current active version)
+              const isInactiveVersion = message.version != null &&
+                effectiveActiveVersion > 0 &&
+                message.version > effectiveActiveVersion;
+
+              // Determine if this version is the currently active one
+              const isCurrentVersion = message.version != null &&
+                effectiveActiveVersion > 0 &&
+                message.version === effectiveActiveVersion;
+
+              // Can click to switch to this version if:
+              // - Has a version and commitHash
+              // - Not busy
+              // - Not already the effective active version
+              const canSwitchToVersion = message.version != null &&
+                message.commitHash != null &&
+                !isBusy &&
+                message.version !== effectiveActiveVersion;
+
+              return (
+                <ChatMessage
+                  key={message.id}
+                  message={message}
+                  isInactive={isInactiveVersion}
+                  isCurrentVersion={isCurrentVersion}
+                  onVersionClick={
+                    canSwitchToVersion
+                      ? () => handleVersionChange(message.version!, message.commitHash!)
+                      : undefined
+                  }
+                />
+              );
+            })}
             {isLoading && (
               <div className="flex justify-start">
                 <div className="rounded-2xl rounded-bl-md px-4 py-3 bg-bg-tertiary">

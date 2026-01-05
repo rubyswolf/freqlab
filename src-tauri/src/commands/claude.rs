@@ -1,4 +1,6 @@
 use serde::{Deserialize, Serialize};
+use std::fs;
+use std::path::PathBuf;
 use std::process::Stdio;
 use tauri::Emitter;
 use tokio::io::{AsyncBufReadExt, BufReader};
@@ -8,19 +10,20 @@ use tokio::process::Command;
 pub struct ClaudeResponse {
     pub content: String,
     pub session_id: Option<String>,
+    pub commit_hash: Option<String>,
 }
 
 #[derive(Serialize, Clone)]
 #[serde(tag = "type")]
 pub enum ClaudeStreamEvent {
     #[serde(rename = "start")]
-    Start,
+    Start { project_path: String },
     #[serde(rename = "text")]
-    Text { content: String },
+    Text { project_path: String, content: String },
     #[serde(rename = "error")]
-    Error { message: String },
+    Error { project_path: String, message: String },
     #[serde(rename = "done")]
-    Done { content: String },
+    Done { project_path: String, content: String },
 }
 
 /// Represents a parsed event from Claude CLI stream-json output
@@ -38,12 +41,40 @@ struct ClaudeJsonEvent {
     content: Option<String>,
     #[serde(default)]
     result: Option<String>,
+    #[serde(default)]
+    session_id: Option<String>,
 }
 
 #[derive(Deserialize, Debug, Default)]
 struct ClaudeMessage {
     #[serde(default)]
     content: Option<serde_json::Value>,
+}
+
+/// Get the session file path for a project
+fn get_session_file(project_path: &str) -> PathBuf {
+    PathBuf::from(project_path)
+        .join(".vstworkshop")
+        .join("claude_session.txt")
+}
+
+/// Load session ID for a project (if exists)
+fn load_session_id(project_path: &str) -> Option<String> {
+    let session_file = get_session_file(project_path);
+    fs::read_to_string(session_file).ok().map(|s| s.trim().to_string())
+}
+
+/// Save session ID for a project
+fn save_session_id(project_path: &str, session_id: &str) -> Result<(), String> {
+    let session_file = get_session_file(project_path);
+    fs::write(&session_file, session_id)
+        .map_err(|e| format!("Failed to save session ID: {}", e))
+}
+
+/// Extract session_id from a JSON event if present
+fn extract_session_id(json_str: &str) -> Option<String> {
+    let event: ClaudeJsonEvent = serde_json::from_str(json_str).ok()?;
+    event.session_id
 }
 
 /// Parse a JSON event and return a human-readable string
@@ -192,32 +223,67 @@ pub async fn send_to_claude(
     message: String,
     window: tauri::Window,
 ) -> Result<ClaudeResponse, String> {
+    // Ensure git is initialized for this project (handles existing projects)
+    if !super::git::is_git_repo(&project_path) {
+        super::git::init_repo(&project_path)?;
+        super::git::create_gitignore(&project_path)?;
+        super::git::commit_changes(&project_path, "Initialize git for version control")?;
+    }
+
+    // Ensure .vstworkshop/ is not tracked by git (fixes existing projects)
+    // This prevents chat.json from being reverted when doing git checkout
+    if let Err(e) = super::git::ensure_vstworkshop_ignored(&project_path) {
+        eprintln!("[WARN] Failed to update gitignore: {}", e);
+    }
+
     // Build context
     let context = build_context(&project_name, &description);
+
+    // Check for existing session to resume
+    let existing_session = load_session_id(&project_path);
+
+    // Build args - include --resume if we have an existing session
+    let mut args = vec![
+        "-p".to_string(),
+        message.clone(),
+        "--verbose".to_string(),
+        "--allowedTools".to_string(),
+        "Edit,Write,Read".to_string(),
+        "--output-format".to_string(),
+        "stream-json".to_string(),
+        "--max-turns".to_string(),
+        "15".to_string(),
+    ];
+
+    // Only add system prompt on first message (new session)
+    // For resumed sessions, Claude already has the context
+    if existing_session.is_none() {
+        args.push("--append-system-prompt".to_string());
+        args.push(context);
+    }
+
+    // Add resume flag if we have an existing session
+    if let Some(ref session_id) = existing_session {
+        args.push("--resume".to_string());
+        args.push(session_id.clone());
+        eprintln!("[DEBUG] Resuming Claude session: {}", session_id);
+    } else {
+        eprintln!("[DEBUG] Starting new Claude session");
+    }
 
     // Spawn Claude CLI process with stream-json for detailed output
     let mut child = Command::new("claude")
         .current_dir(&project_path)
-        .args([
-            "-p",
-            &message,
-            "--verbose",
-            "--allowedTools",
-            "Edit,Write,Read",
-            "--output-format",
-            "stream-json",
-            "--append-system-prompt",
-            &context,
-            "--max-turns",
-            "15",
-        ])
+        .args(&args)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
         .map_err(|e| format!("Failed to spawn Claude CLI: {}", e))?;
 
     // Emit start event
-    let _ = window.emit("claude-stream", ClaudeStreamEvent::Start);
+    let _ = window.emit("claude-stream", ClaudeStreamEvent::Start {
+        project_path: project_path.clone()
+    });
 
     let stdout = child
         .stdout
@@ -234,6 +300,7 @@ pub async fn send_to_claude(
 
     let mut full_output = String::new();
     let mut error_output = String::new();
+    let mut captured_session_id: Option<String> = None;
 
     // Read stdout and stderr concurrently
     loop {
@@ -241,11 +308,17 @@ pub async fn send_to_claude(
             line = stdout_reader.next_line() => {
                 match line {
                     Ok(Some(json_line)) => {
-                        // Try to parse as JSON event
+                        // Try to extract session_id if present
+                        if let Some(sid) = extract_session_id(&json_line) {
+                            captured_session_id = Some(sid);
+                        }
+
+                        // Try to parse as JSON event for display
                         if let Some(display_text) = parse_claude_event(&json_line) {
                             full_output.push_str(&display_text);
                             full_output.push('\n');
                             let _ = window.emit("claude-stream", ClaudeStreamEvent::Text {
+                                project_path: project_path.clone(),
                                 content: display_text,
                             });
                         }
@@ -253,6 +326,7 @@ pub async fn send_to_claude(
                     Ok(None) => break,
                     Err(e) => {
                         let _ = window.emit("claude-stream", ClaudeStreamEvent::Error {
+                            project_path: project_path.clone(),
                             message: e.to_string(),
                         });
                         break;
@@ -266,6 +340,7 @@ pub async fn send_to_claude(
                         error_output.push('\n');
                         // Also emit stderr as it may contain useful info
                         let _ = window.emit("claude-stream", ClaudeStreamEvent::Text {
+                            project_path: project_path.clone(),
                             content: format!("[stderr] {}", text),
                         });
                     }
@@ -284,6 +359,7 @@ pub async fn send_to_claude(
 
     if !status.success() && !error_output.is_empty() {
         let _ = window.emit("claude-stream", ClaudeStreamEvent::Error {
+            project_path: project_path.clone(),
             message: error_output.clone(),
         });
         return Err(format!("Claude CLI failed: {}", error_output));
@@ -291,12 +367,31 @@ pub async fn send_to_claude(
 
     // Emit done event
     let _ = window.emit("claude-stream", ClaudeStreamEvent::Done {
+        project_path: project_path.clone(),
         content: full_output.clone(),
     });
 
+    // Save session ID for next conversation (if we got one)
+    if let Some(ref sid) = captured_session_id {
+        if let Err(e) = save_session_id(&project_path, sid) {
+            eprintln!("[WARN] Failed to save session ID: {}", e);
+        } else {
+            eprintln!("[DEBUG] Saved session ID: {}", sid);
+        }
+    }
+
+    // Commit changes after Claude finishes (truncate message for commit)
+    let commit_msg = if message.len() > 50 {
+        format!("{}...", &message[..47])
+    } else {
+        message.clone()
+    };
+    let commit_hash = super::git::commit_changes(&project_path, &commit_msg).ok();
+
     Ok(ClaudeResponse {
         content: full_output,
-        session_id: None,
+        session_id: captured_session_id,
+        commit_hash,
     })
 }
 

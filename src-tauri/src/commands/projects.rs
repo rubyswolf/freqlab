@@ -319,6 +319,12 @@ nih_export_vst3!({pascal_name});
     fs::write(project_path.join(".vstworkshop/metadata.json"), metadata_json)
         .map_err(|e| format!("Failed to write metadata.json: {}", e))?;
 
+    // Initialize git repository for version control
+    let project_path_str = project_path.to_string_lossy().to_string();
+    super::git::init_repo(&project_path_str)?;
+    super::git::create_gitignore(&project_path_str)?;
+    super::git::commit_changes(&project_path_str, "Initial plugin template")?;
+
     Ok(metadata)
 }
 

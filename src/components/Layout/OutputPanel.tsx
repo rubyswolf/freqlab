@@ -1,9 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
-import { useOutputStore } from '../../stores/outputStore';
+import { useProjectOutput } from '../../stores/outputStore';
+import { useProjectStore } from '../../stores/projectStore';
 
 export function OutputPanel() {
   const [isCollapsed, setIsCollapsed] = useState(false);
-  const { lines, isActive, clear } = useOutputStore();
+  const { activeProject } = useProjectStore();
+  const { lines, isActive, clear } = useProjectOutput(activeProject?.path ?? null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const wasActive = useRef(false);
 
@@ -32,7 +34,8 @@ export function OutputPanel() {
         <div className="flex items-center gap-2">
           <div className={`w-2 h-2 rounded-full ${isActive ? 'bg-accent animate-pulse' : 'bg-success'}`} />
           <span className="text-sm font-medium text-text-secondary">
-            {isActive ? 'Claude is working...' : 'Output'}
+            {isActive ? 'Working...' : 'Output'}
+            {activeProject && <span className="text-text-muted ml-1">({activeProject.name})</span>}
           </span>
           {lines.length > 0 && (
             <span className="text-xs text-text-muted">({lines.length} lines)</span>
@@ -74,7 +77,9 @@ export function OutputPanel() {
             className="font-mono text-xs bg-bg-primary rounded-lg p-3 h-full overflow-auto"
           >
             {lines.length === 0 ? (
-              <span className="text-text-muted">Waiting for activity...</span>
+              <span className="text-text-muted">
+                {activeProject ? 'Waiting for activity...' : 'Select a project to see output'}
+              </span>
             ) : (
               lines.map((line, i) => (
                 <div key={i} className="text-text-secondary leading-relaxed whitespace-pre-wrap">

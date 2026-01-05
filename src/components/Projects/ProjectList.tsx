@@ -1,10 +1,12 @@
 import { useEffect } from 'react';
 import { useProjectStore } from '../../stores/projectStore';
+import { useProjectBusyStore } from '../../stores/projectBusyStore';
 import { ProjectCard } from './ProjectCard';
 import { Spinner } from '../Common/Spinner';
 
 export function ProjectList() {
-  const { projects, activeProject, loading, error, loadProjects, selectProject } = useProjectStore();
+  const { projects, activeProject, loading, error, loadProjects, selectProject, deleteProject } = useProjectStore();
+  const { claudeBusyPath, buildingPath } = useProjectBusyStore();
 
   useEffect(() => {
     loadProjects();
@@ -40,16 +42,32 @@ export function ProjectList() {
     );
   }
 
+  const getBusyState = (projectPath: string): { isBusy: boolean; busyType: 'claude' | 'build' | null } => {
+    if (claudeBusyPath === projectPath) {
+      return { isBusy: true, busyType: 'claude' };
+    }
+    if (buildingPath === projectPath) {
+      return { isBusy: true, busyType: 'build' };
+    }
+    return { isBusy: false, busyType: null };
+  };
+
   return (
     <div className="space-y-1">
-      {projects.map((project) => (
-        <ProjectCard
-          key={project.id}
-          project={project}
-          isActive={activeProject?.id === project.id}
-          onClick={() => selectProject(project)}
-        />
-      ))}
+      {projects.map((project) => {
+        const { isBusy, busyType } = getBusyState(project.path);
+        return (
+          <ProjectCard
+            key={project.id}
+            project={project}
+            isActive={activeProject?.id === project.id}
+            isBusy={isBusy}
+            busyType={busyType}
+            onClick={() => selectProject(project)}
+            onDelete={() => deleteProject(project.name)}
+          />
+        );
+      })}
     </div>
   );
 }

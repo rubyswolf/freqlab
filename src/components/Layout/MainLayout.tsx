@@ -8,9 +8,10 @@ import { NewProjectModal } from '../Projects';
 import { ChatPanel } from '../Chat';
 import { ToastContainer } from '../Common/Toast';
 import { useProjectStore } from '../../stores/projectStore';
-import { useOutputStore } from '../../stores/outputStore';
+import { useProjectOutput } from '../../stores/outputStore';
 import { useToastStore } from '../../stores/toastStore';
 import { useChatStore } from '../../stores/chatStore';
+import { useProjectBusyStore } from '../../stores/projectBusyStore';
 
 interface BuildStreamEvent {
   type: 'start' | 'output' | 'done' | 'error';
@@ -28,11 +29,22 @@ interface BuildResult {
 
 export function MainLayout() {
   const [isNewProjectModalOpen, setIsNewProjectModalOpen] = useState(false);
-  const [isBuilding, setIsBuilding] = useState(false);
   const { activeProject, createProject } = useProjectStore();
-  const { addLine, setActive, clear } = useOutputStore();
   const { addToast } = useToastStore();
   const { queueMessage } = useChatStore();
+  const { buildingPath, setBuildingPath, clearBuildingIfMatch, claudeBusyPath } = useProjectBusyStore();
+
+  // Per-project output - use activeProject's path
+  const { addLine, setActive, clear } = useProjectOutput(activeProject?.path ?? null);
+
+  // Check if current project is building
+  const isBuilding = activeProject ? buildingPath === activeProject.path : false;
+  // Check if THIS project has Claude working (project-specific)
+  const thisProjectClaudeBusy = activeProject ? claudeBusyPath === activeProject.path : false;
+  // Check if ANY build is happening (global - can't have two builds at once)
+  const anyBuildInProgress = buildingPath !== null;
+  // Build disabled if: this project has Claude working OR any build in progress
+  const buildDisabled = thisProjectClaudeBusy || anyBuildInProgress;
 
   const handleCreateProject = async (name: string, description: string) => {
     await createProject({ name, description });
@@ -49,9 +61,9 @@ export function MainLayout() {
   };
 
   const handleBuild = async () => {
-    if (!activeProject || isBuilding) return;
+    if (!activeProject || buildDisabled) return;
 
-    setIsBuilding(true);
+    setBuildingPath(activeProject.path);
     clear();
     setActive(true);
     addLine(`> Building ${activeProject.name}...`);
@@ -109,7 +121,10 @@ export function MainLayout() {
       });
     } finally {
       unlisten();
-      setIsBuilding(false);
+      // Only clear if we're still the active build (prevents race conditions)
+      if (activeProject) {
+        clearBuildingIfMatch(activeProject.path);
+      }
       setActive(false);
       addLine('');
       addLine('[Done]');
@@ -143,9 +158,9 @@ export function MainLayout() {
                     </button>
                     <button
                       onClick={handleBuild}
-                      disabled={isBuilding}
+                      disabled={buildDisabled}
                       className="flex items-center gap-2 px-3 py-1.5 text-sm text-white bg-accent hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed rounded-lg transition-colors"
-                      title="Build plugin"
+                      title={buildDisabled ? (anyBuildInProgress ? 'Build in progress...' : 'Claude is working on this project...') : 'Build plugin'}
                     >
                       {isBuilding ? (
                         <>
@@ -167,7 +182,8 @@ export function MainLayout() {
                   </div>
                 </div>
                 <div className="flex-1 min-h-0">
-                  <ChatPanel project={activeProject} />
+                  {/* Key by project path to force full remount when switching projects */}
+                  <ChatPanel key={activeProject.path} project={activeProject} />
                 </div>
               </div>
             ) : (

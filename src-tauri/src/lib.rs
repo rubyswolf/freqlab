@@ -26,6 +26,11 @@ pub fn run() {
             commands::claude::test_claude_cli,
             commands::build::build_project,
             commands::build::open_output_folder,
+            commands::git::revert_to_commit,
+            commands::chat::save_chat_history,
+            commands::chat::load_chat_history,
+            commands::chat::set_active_version,
+            commands::chat::update_active_version,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

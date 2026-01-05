@@ -2,20 +2,33 @@ import type { ChatMessage as ChatMessageType } from '../../types';
 
 interface ChatMessageProps {
   message: ChatMessageType;
+  isInactive?: boolean;  // Version is ahead of active version (greyed out)
+  isCurrentVersion?: boolean;  // This is the currently active version
+  onVersionClick?: () => void;  // Click to switch to this version
 }
 
-export function ChatMessage({ message }: ChatMessageProps) {
+export function ChatMessage({ message, isInactive, isCurrentVersion, onVersionClick }: ChatMessageProps) {
   const isUser = message.role === 'user';
+  // Use isInactive for styling, fall back to legacy reverted field
+  const isGreyedOut = isInactive || message.reverted;
 
   return (
-    <div className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
+    <div className={`flex ${isUser ? 'justify-end' : 'justify-start'} ${isGreyedOut ? 'opacity-50' : ''}`}>
       <div
         className={`max-w-[80%] rounded-2xl px-4 py-3 ${
           isUser
             ? 'bg-accent text-white rounded-br-md'
             : 'bg-bg-tertiary text-text-primary rounded-bl-md'
-        }`}
+        } ${isGreyedOut ? 'border border-dashed border-text-muted/30' : ''} ${isCurrentVersion ? 'ring-2 ring-accent/50' : ''}`}
       >
+        {isGreyedOut && (
+          <div className="text-xs text-text-muted mb-2 flex items-center gap-1">
+            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <span>Inactive version</span>
+          </div>
+        )}
         <div className="text-sm whitespace-pre-wrap break-words">{message.content}</div>
         {message.filesModified && message.filesModified.length > 0 && (
           <div className="mt-2 pt-2 border-t border-white/10">
@@ -30,8 +43,39 @@ export function ChatMessage({ message }: ChatMessageProps) {
             ))}
           </div>
         )}
-        <div className={`text-xs mt-1 ${isUser ? 'text-white/60' : 'text-text-muted'}`}>
-          {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+        <div className={`flex items-center justify-between mt-1 ${isUser ? 'text-white/60' : 'text-text-muted'}`}>
+          <div className="flex items-center gap-2">
+            <span className="text-xs">
+              {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+            </span>
+            {message.version && !isUser && (
+              <span className={`text-xs px-1.5 py-0.5 rounded ${isCurrentVersion ? 'bg-accent text-white' : 'bg-accent/20 text-accent'}`}>
+                v{message.version}{isCurrentVersion ? ' (current)' : ''}
+              </span>
+            )}
+          </div>
+          {onVersionClick && !isUser && message.version && (
+            <button
+              onClick={onVersionClick}
+              className="text-xs hover:text-accent transition-colors flex items-center gap-1"
+            >
+              {isGreyedOut ? (
+                <>
+                  <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                  </svg>
+                  Restore to v{message.version}
+                </>
+              ) : (
+                <>
+                  <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+                  </svg>
+                  Revert to v{message.version}
+                </>
+              )}
+            </button>
+          )}
         </div>
       </div>
     </div>
