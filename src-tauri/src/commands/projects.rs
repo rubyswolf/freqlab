@@ -7,6 +7,7 @@ pub struct ProjectMeta {
     pub id: String,
     pub name: String,
     pub description: String,
+    pub template: Option<String>, // "effect" or "instrument"
     pub created_at: String,
     pub updated_at: String,
     pub path: String,
@@ -16,6 +17,13 @@ pub struct ProjectMeta {
 pub struct CreateProjectInput {
     pub name: String,
     pub description: String,
+    pub template: String, // "effect" or "instrument"
+    #[serde(rename = "vendorName")]
+    pub vendor_name: Option<String>,
+    #[serde(rename = "vendorUrl")]
+    pub vendor_url: Option<String>,
+    #[serde(rename = "vendorEmail")]
+    pub vendor_email: Option<String>,
 }
 
 pub fn get_workspace_path() -> PathBuf {
@@ -193,111 +201,41 @@ strip = "symbols"
     fs::write(project_path.join("Cargo.toml"), cargo_toml)
         .map_err(|e| format!("Failed to write Cargo.toml: {}", e))?;
 
-    // Write src/lib.rs (minimal passthrough template)
-    let lib_rs = format!(
-        r#"use nih_plug::prelude::*;
-use std::sync::Arc;
+    // Generate template based on type
+    let vendor_name = input.vendor_name.as_deref().unwrap_or("freqlab");
+    let vendor_id: String = vendor_name
+        .to_lowercase()
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .collect();
+    let vendor_url = input.vendor_url.as_deref().unwrap_or("");
+    let vendor_email = input.vendor_email.as_deref().unwrap_or("");
+    let description_escaped = input.description.replace('"', "\\\"");
 
-/// {description}
-struct {pascal_name} {{
-    params: Arc<{pascal_name}Params>,
-}}
+    let lib_rs = if input.template == "instrument" {
+        generate_instrument_template(
+            &pascal_name,
+            &snake_name,
+            &description_escaped,
+            &vst3_id,
+            vendor_name,
+            &vendor_id,
+            vendor_url,
+            vendor_email,
+        )
+    } else {
+        generate_effect_template(
+            &pascal_name,
+            &snake_name,
+            &description_escaped,
+            &vst3_id,
+            vendor_name,
+            &vendor_id,
+            vendor_url,
+            vendor_email,
+        )
+    };
 
-#[derive(Params)]
-struct {pascal_name}Params {{
-    #[id = "gain"]
-    pub gain: FloatParam,
-}}
-
-impl Default for {pascal_name} {{
-    fn default() -> Self {{
-        Self {{
-            params: Arc::new({pascal_name}Params::default()),
-        }}
-    }}
-}}
-
-impl Default for {pascal_name}Params {{
-    fn default() -> Self {{
-        Self {{
-            gain: FloatParam::new(
-                "Gain",
-                util::db_to_gain(0.0),
-                FloatRange::Skewed {{
-                    min: util::db_to_gain(-30.0),
-                    max: util::db_to_gain(30.0),
-                    factor: FloatRange::gain_skew_factor(-30.0, 30.0),
-                }},
-            )
-            .with_smoother(SmoothingStyle::Logarithmic(50.0))
-            .with_unit(" dB")
-            .with_value_to_string(formatters::v2s_f32_gain_to_db(2))
-            .with_string_to_value(formatters::s2v_f32_gain_to_db()),
-        }}
-    }}
-}}
-
-impl Plugin for {pascal_name} {{
-    const NAME: &'static str = "{display_name}";
-    const VENDOR: &'static str = "VSTWorkshop";
-    const URL: &'static str = "";
-    const EMAIL: &'static str = "";
-    const VERSION: &'static str = env!("CARGO_PKG_VERSION");
-
-    const AUDIO_IO_LAYOUTS: &'static [AudioIOLayout] = &[AudioIOLayout {{
-        main_input_channels: NonZeroU32::new(2),
-        main_output_channels: NonZeroU32::new(2),
-        ..AudioIOLayout::const_default()
-    }}];
-
-    const MIDI_INPUT: MidiConfig = MidiConfig::None;
-    const MIDI_OUTPUT: MidiConfig = MidiConfig::None;
-
-    type SysExMessage = ();
-    type BackgroundTask = ();
-
-    fn params(&self) -> Arc<dyn Params> {{
-        self.params.clone()
-    }}
-
-    fn process(
-        &mut self,
-        buffer: &mut Buffer,
-        _aux: &mut AuxiliaryBuffers,
-        _context: &mut impl ProcessContext<Self>,
-    ) -> ProcessStatus {{
-        for channel_samples in buffer.iter_samples() {{
-            let gain = self.params.gain.smoothed.next();
-            for sample in channel_samples {{
-                *sample *= gain;
-            }}
-        }}
-        ProcessStatus::Normal
-    }}
-}}
-
-impl ClapPlugin for {pascal_name} {{
-    const CLAP_ID: &'static str = "com.vstworkshop.{snake_name}";
-    const CLAP_DESCRIPTION: Option<&'static str> = Some("{description}");
-    const CLAP_MANUAL_URL: Option<&'static str> = None;
-    const CLAP_SUPPORT_URL: Option<&'static str> = None;
-    const CLAP_FEATURES: &'static [ClapFeature] = &[ClapFeature::AudioEffect, ClapFeature::Stereo];
-}}
-
-impl Vst3Plugin for {pascal_name} {{
-    const VST3_CLASS_ID: [u8; 16] = *b"{vst3_id}";
-    const VST3_SUBCATEGORIES: &'static [Vst3SubCategory] = &[Vst3SubCategory::Fx];
-}}
-
-nih_export_clap!({pascal_name});
-nih_export_vst3!({pascal_name});
-"#,
-        pascal_name = pascal_name,
-        snake_name = snake_name,
-        display_name = to_pascal_case(&input.name),
-        description = input.description.replace('"', "\\\""),
-        vst3_id = vst3_id
-    );
     fs::write(project_path.join("src/lib.rs"), lib_rs)
         .map_err(|e| format!("Failed to write lib.rs: {}", e))?;
 
@@ -309,6 +247,7 @@ nih_export_vst3!({pascal_name});
         id: id.clone(),
         name: input.name.clone(),
         description: input.description.clone(),
+        template: Some(input.template.clone()),
         created_at: now.clone(),
         updated_at: now,
         path: project_path.to_string_lossy().to_string(),
@@ -387,8 +326,16 @@ pub async fn delete_project(name: String) -> Result<(), String> {
         return Err(format!("Project '{}' not found", name));
     }
 
+    // Delete the project source folder
     fs::remove_dir_all(&project_path)
         .map_err(|e| format!("Failed to delete project: {}", e))?;
+
+    // Also clean up the output folder for this project (output/{name}/)
+    let output_folder = get_output_path().join(&name);
+    if output_folder.exists() {
+        // Don't fail if output cleanup fails - project is already deleted
+        let _ = fs::remove_dir_all(&output_folder);
+    }
 
     Ok(())
 }
@@ -408,4 +355,304 @@ pub async fn open_project_folder(path: String) -> Result<(), String> {
 #[tauri::command]
 pub async fn get_workspace_path_string() -> String {
     get_workspace_path().to_string_lossy().to_string()
+}
+
+/// Generate an effect plugin template (processes audio input)
+fn generate_effect_template(
+    pascal_name: &str,
+    snake_name: &str,
+    description: &str,
+    vst3_id: &str,
+    vendor_name: &str,
+    vendor_id: &str,
+    vendor_url: &str,
+    vendor_email: &str,
+) -> String {
+    format!(
+        r#"use nih_plug::prelude::*;
+use std::sync::Arc;
+
+/// {description}
+struct {pascal_name} {{
+    params: Arc<{pascal_name}Params>,
+}}
+
+#[derive(Params)]
+struct {pascal_name}Params {{
+    #[id = "gain"]
+    pub gain: FloatParam,
+}}
+
+impl Default for {pascal_name} {{
+    fn default() -> Self {{
+        Self {{
+            params: Arc::new({pascal_name}Params::default()),
+        }}
+    }}
+}}
+
+impl Default for {pascal_name}Params {{
+    fn default() -> Self {{
+        Self {{
+            gain: FloatParam::new(
+                "Gain",
+                util::db_to_gain(0.0),
+                FloatRange::Skewed {{
+                    min: util::db_to_gain(-30.0),
+                    max: util::db_to_gain(30.0),
+                    factor: FloatRange::gain_skew_factor(-30.0, 30.0),
+                }},
+            )
+            .with_smoother(SmoothingStyle::Logarithmic(50.0))
+            .with_unit(" dB")
+            .with_value_to_string(formatters::v2s_f32_gain_to_db(2))
+            .with_string_to_value(formatters::s2v_f32_gain_to_db()),
+        }}
+    }}
+}}
+
+impl Plugin for {pascal_name} {{
+    const NAME: &'static str = "{pascal_name}";
+    const VENDOR: &'static str = "{vendor_name}";
+    const URL: &'static str = "{vendor_url}";
+    const EMAIL: &'static str = "{vendor_email}";
+    const VERSION: &'static str = env!("CARGO_PKG_VERSION");
+
+    const AUDIO_IO_LAYOUTS: &'static [AudioIOLayout] = &[AudioIOLayout {{
+        main_input_channels: NonZeroU32::new(2),
+        main_output_channels: NonZeroU32::new(2),
+        ..AudioIOLayout::const_default()
+    }}];
+
+    const MIDI_INPUT: MidiConfig = MidiConfig::None;
+    const MIDI_OUTPUT: MidiConfig = MidiConfig::None;
+
+    type SysExMessage = ();
+    type BackgroundTask = ();
+
+    fn params(&self) -> Arc<dyn Params> {{
+        self.params.clone()
+    }}
+
+    fn process(
+        &mut self,
+        buffer: &mut Buffer,
+        _aux: &mut AuxiliaryBuffers,
+        _context: &mut impl ProcessContext<Self>,
+    ) -> ProcessStatus {{
+        for channel_samples in buffer.iter_samples() {{
+            let gain = self.params.gain.smoothed.next();
+            for sample in channel_samples {{
+                *sample *= gain;
+            }}
+        }}
+        ProcessStatus::Normal
+    }}
+}}
+
+impl ClapPlugin for {pascal_name} {{
+    const CLAP_ID: &'static str = "com.{vendor_id}.{snake_name}";
+    const CLAP_DESCRIPTION: Option<&'static str> = Some("{description}");
+    const CLAP_MANUAL_URL: Option<&'static str> = None;
+    const CLAP_SUPPORT_URL: Option<&'static str> = None;
+    const CLAP_FEATURES: &'static [ClapFeature] = &[ClapFeature::AudioEffect, ClapFeature::Stereo];
+}}
+
+impl Vst3Plugin for {pascal_name} {{
+    const VST3_CLASS_ID: [u8; 16] = *b"{vst3_id}";
+    const VST3_SUBCATEGORIES: &'static [Vst3SubCategory] = &[Vst3SubCategory::Fx];
+}}
+
+nih_export_clap!({pascal_name});
+nih_export_vst3!({pascal_name});
+"#,
+        pascal_name = pascal_name,
+        snake_name = snake_name,
+        description = description,
+        vst3_id = vst3_id,
+        vendor_name = vendor_name,
+        vendor_id = vendor_id,
+        vendor_url = vendor_url,
+        vendor_email = vendor_email
+    )
+}
+
+/// Generate an instrument plugin template (synthesizer that generates sound from MIDI)
+fn generate_instrument_template(
+    pascal_name: &str,
+    snake_name: &str,
+    description: &str,
+    vst3_id: &str,
+    vendor_name: &str,
+    vendor_id: &str,
+    vendor_url: &str,
+    vendor_email: &str,
+) -> String {
+    format!(
+        r#"use nih_plug::prelude::*;
+use std::sync::Arc;
+
+/// {description}
+struct {pascal_name} {{
+    params: Arc<{pascal_name}Params>,
+    sample_rate: f32,
+    /// Current phase of the oscillator (0.0 to 1.0)
+    phase: f32,
+    /// Current note frequency (0 if no note playing)
+    note_freq: f32,
+    /// Current note velocity (0.0 to 1.0)
+    velocity: f32,
+}}
+
+#[derive(Params)]
+struct {pascal_name}Params {{
+    #[id = "gain"]
+    pub gain: FloatParam,
+}}
+
+impl Default for {pascal_name} {{
+    fn default() -> Self {{
+        Self {{
+            params: Arc::new({pascal_name}Params::default()),
+            sample_rate: 44100.0,
+            phase: 0.0,
+            note_freq: 0.0,
+            velocity: 0.0,
+        }}
+    }}
+}}
+
+impl Default for {pascal_name}Params {{
+    fn default() -> Self {{
+        Self {{
+            gain: FloatParam::new(
+                "Gain",
+                util::db_to_gain(-6.0),
+                FloatRange::Skewed {{
+                    min: util::db_to_gain(-30.0),
+                    max: util::db_to_gain(6.0),
+                    factor: FloatRange::gain_skew_factor(-30.0, 6.0),
+                }},
+            )
+            .with_smoother(SmoothingStyle::Logarithmic(50.0))
+            .with_unit(" dB")
+            .with_value_to_string(formatters::v2s_f32_gain_to_db(2))
+            .with_string_to_value(formatters::s2v_f32_gain_to_db()),
+        }}
+    }}
+}}
+
+impl {pascal_name} {{
+    /// Convert MIDI note number to frequency in Hz
+    fn midi_note_to_freq(note: u8) -> f32 {{
+        440.0 * 2.0_f32.powf((note as f32 - 69.0) / 12.0)
+    }}
+}}
+
+impl Plugin for {pascal_name} {{
+    const NAME: &'static str = "{pascal_name}";
+    const VENDOR: &'static str = "{vendor_name}";
+    const URL: &'static str = "{vendor_url}";
+    const EMAIL: &'static str = "{vendor_email}";
+    const VERSION: &'static str = env!("CARGO_PKG_VERSION");
+
+    // Instrument: no audio input, stereo output
+    const AUDIO_IO_LAYOUTS: &'static [AudioIOLayout] = &[AudioIOLayout {{
+        main_input_channels: None,
+        main_output_channels: NonZeroU32::new(2),
+        ..AudioIOLayout::const_default()
+    }}];
+
+    const MIDI_INPUT: MidiConfig = MidiConfig::Basic;
+    const MIDI_OUTPUT: MidiConfig = MidiConfig::None;
+
+    type SysExMessage = ();
+    type BackgroundTask = ();
+
+    fn params(&self) -> Arc<dyn Params> {{
+        self.params.clone()
+    }}
+
+    fn initialize(
+        &mut self,
+        _audio_io_layout: &AudioIOLayout,
+        buffer_config: &BufferConfig,
+        _context: &mut impl InitContext<Self>,
+    ) -> bool {{
+        self.sample_rate = buffer_config.sample_rate;
+        true
+    }}
+
+    fn process(
+        &mut self,
+        buffer: &mut Buffer,
+        _aux: &mut AuxiliaryBuffers,
+        context: &mut impl ProcessContext<Self>,
+    ) -> ProcessStatus {{
+        // Process MIDI events
+        while let Some(event) = context.next_event() {{
+            match event {{
+                NoteEvent::NoteOn {{ note, velocity, .. }} => {{
+                    self.note_freq = Self::midi_note_to_freq(note);
+                    self.velocity = velocity;
+                }}
+                NoteEvent::NoteOff {{ note, .. }} => {{
+                    // Only stop if it's the same note
+                    if Self::midi_note_to_freq(note) == self.note_freq {{
+                        self.note_freq = 0.0;
+                        self.velocity = 0.0;
+                    }}
+                }}
+                _ => {{}}
+            }}
+        }}
+
+        // Generate audio
+        let gain = self.params.gain.smoothed.next();
+        let phase_delta = self.note_freq / self.sample_rate;
+
+        for channel_samples in buffer.iter_samples() {{
+            // Simple sine wave oscillator
+            let sample = if self.note_freq > 0.0 {{
+                let sine = (self.phase * std::f32::consts::TAU).sin();
+                self.phase = (self.phase + phase_delta) % 1.0;
+                sine * self.velocity * gain
+            }} else {{
+                0.0
+            }};
+
+            for output_sample in channel_samples {{
+                *output_sample = sample;
+            }}
+        }}
+
+        ProcessStatus::Normal
+    }}
+}}
+
+impl ClapPlugin for {pascal_name} {{
+    const CLAP_ID: &'static str = "com.{vendor_id}.{snake_name}";
+    const CLAP_DESCRIPTION: Option<&'static str> = Some("{description}");
+    const CLAP_MANUAL_URL: Option<&'static str> = None;
+    const CLAP_SUPPORT_URL: Option<&'static str> = None;
+    const CLAP_FEATURES: &'static [ClapFeature] = &[ClapFeature::Instrument, ClapFeature::Synthesizer, ClapFeature::Stereo];
+}}
+
+impl Vst3Plugin for {pascal_name} {{
+    const VST3_CLASS_ID: [u8; 16] = *b"{vst3_id}";
+    const VST3_SUBCATEGORIES: &'static [Vst3SubCategory] = &[Vst3SubCategory::Synth, Vst3SubCategory::Instrument];
+}}
+
+nih_export_clap!({pascal_name});
+nih_export_vst3!({pascal_name});
+"#,
+        pascal_name = pascal_name,
+        snake_name = snake_name,
+        description = description,
+        vst3_id = vst3_id,
+        vendor_name = vendor_name,
+        vendor_id = vendor_id,
+        vendor_url = vendor_url,
+        vendor_email = vendor_email
+    )
 }

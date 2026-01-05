@@ -1,24 +1,63 @@
 @import "tailwindcss";
 
+/* Dark theme (default) */
 @theme {
-  --color-bg-primary: #0f0f0f;
-  --color-bg-secondary: #171717;
-  --color-bg-tertiary: #1f1f1f;
-  --color-bg-elevated: #262626;
-  --color-text-primary: #fafafa;
-  --color-text-secondary: #a1a1aa;
-  --color-text-muted: #71717a;
-  --color-accent: #8b5cf6;
-  --color-accent-hover: #a78bfa;
-  --color-accent-subtle: rgba(139, 92, 246, 0.15);
+  --color-bg-primary: var(--theme-bg-primary, #0f0f0f);
+  --color-bg-secondary: var(--theme-bg-secondary, #171717);
+  --color-bg-tertiary: var(--theme-bg-tertiary, #1f1f1f);
+  --color-bg-elevated: var(--theme-bg-elevated, #262626);
+  --color-text-primary: var(--theme-text-primary, #fafafa);
+  --color-text-secondary: var(--theme-text-secondary, #a1a1aa);
+  --color-text-muted: var(--theme-text-muted, #71717a);
+  --color-accent: var(--theme-accent, #8b5cf6);
+  --color-accent-hover: var(--theme-accent-hover, #a78bfa);
+  --color-accent-subtle: var(--theme-accent-subtle, rgba(139, 92, 246, 0.15));
   --color-success: #10b981;
   --color-success-subtle: rgba(16, 185, 129, 0.15);
   --color-warning: #f59e0b;
   --color-warning-subtle: rgba(245, 158, 11, 0.15);
   --color-error: #ef4444;
   --color-error-subtle: rgba(239, 68, 68, 0.15);
-  --color-border: #27272a;
-  --color-border-subtle: #1f1f1f;
+  --color-border: var(--theme-border, #27272a);
+  --color-border-subtle: var(--theme-border-subtle, #1f1f1f);
+}
+
+/* Dark theme values */
+:root,
+[data-theme="dark"] {
+  --theme-bg-primary: #0f0f0f;
+  --theme-bg-secondary: #171717;
+  --theme-bg-tertiary: #1f1f1f;
+  --theme-bg-elevated: #262626;
+  --theme-text-primary: #fafafa;
+  --theme-text-secondary: #a1a1aa;
+  --theme-text-muted: #71717a;
+  --theme-accent: #8b5cf6;
+  --theme-accent-hover: #a78bfa;
+  --theme-accent-subtle: rgba(139, 92, 246, 0.15);
+  --theme-border: #27272a;
+  --theme-border-subtle: #1f1f1f;
+}
+
+/* Light theme values */
+[data-theme="light"] {
+  --theme-bg-primary: #ffffff;
+  --theme-bg-secondary: #f8f8f8;
+  --theme-bg-tertiary: #f0f0f0;
+  --theme-bg-elevated: #ffffff;
+  --theme-text-primary: #171717;
+  --theme-text-secondary: #525252;
+  --theme-text-muted: #737373;
+  --theme-accent: #7c3aed;
+  --theme-accent-hover: #6d28d9;
+  --theme-accent-subtle: rgba(124, 58, 237, 0.1);
+  --theme-border: #e5e5e5;
+  --theme-border-subtle: #f0f0f0;
+}
+
+/* Custom theme - colors are set via JS */
+[data-theme="custom"] {
+  /* Custom colors are injected as CSS variables via JavaScript */
 }
 
 :root {

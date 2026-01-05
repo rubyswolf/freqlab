@@ -2,6 +2,9 @@ mod commands;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Initialize file logging
+    commands::logging::init_logging();
+
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .setup(|app| {
@@ -31,6 +34,13 @@ pub fn run() {
             commands::chat::load_chat_history,
             commands::chat::set_active_version,
             commands::chat::update_active_version,
+            commands::chat::get_current_version,
+            commands::publish::publish_to_daw,
+            commands::publish::check_available_formats,
+            commands::logging::get_log_file_path,
+            commands::logging::read_log_file,
+            commands::logging::clear_log_file,
+            commands::logging::get_log_file_size,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

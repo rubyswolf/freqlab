@@ -17,12 +17,22 @@ interface ClaudeStreamEvent {
 
 interface ChatPanelProps {
   project: ProjectMeta;
+  onVersionChange?: () => void;
 }
 
-export function ChatPanel({ project }: ChatPanelProps) {
+const THINKING_PHRASES = [
+  'Thinking...',
+  'Pondering...',
+  'Ruminating...',
+  'Contemplating...',
+  'Processing...',
+];
+
+export function ChatPanel({ project, onVersionChange }: ChatPanelProps) {
   const [messages, setMessages] = useState<ChatMessageType[]>([]);
   const [activeVersion, setActiveVersion] = useState<number | null>(null);
   const [streamingContent, setStreamingContent] = useState('');
+  const [thinkingPhraseIndex, setThinkingPhraseIndex] = useState(0);
   const [isHistoryLoaded, setIsHistoryLoaded] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesRef = useRef<ChatMessageType[]>([]);
@@ -38,6 +48,21 @@ export function ChatPanel({ project }: ChatPanelProps) {
   // Check if project is busy with anything (Claude or building)
   const isBusy = isProjectBusy(project.path);
 
+  // Load chat history from disk
+  const loadHistory = useCallback(async () => {
+    try {
+      const state = await invoke<ChatState>('load_chat_history', {
+        projectPath: project.path,
+      });
+      setMessages(state.messages);
+      messagesRef.current = state.messages;
+      setActiveVersion(state.activeVersion);
+    } catch (err) {
+      console.error('Failed to load chat history:', err);
+    }
+    setIsHistoryLoaded(true);
+  }, [project.path]);
+
   // Load chat history when project changes
   useEffect(() => {
     // Reset state when switching projects
@@ -45,21 +70,47 @@ export function ChatPanel({ project }: ChatPanelProps) {
     setActiveVersion(null);
     setIsHistoryLoaded(false);
     setStreamingContent('');
-
-    async function loadHistory() {
-      try {
-        const state = await invoke<ChatState>('load_chat_history', {
-          projectPath: project.path,
-        });
-        setMessages(state.messages);
-        setActiveVersion(state.activeVersion);
-      } catch (err) {
-        console.error('Failed to load chat history:', err);
-      }
-      setIsHistoryLoaded(true);
-    }
     loadHistory();
-  }, [project.path]);
+  }, [project.path, loadHistory]);
+
+  // Re-sync from disk when window regains focus or becomes visible
+  // This fixes state sync issues when the app is minimized or in background
+  useEffect(() => {
+    let lastSyncTime = Date.now();
+    const SYNC_DEBOUNCE_MS = 1000; // Don't sync more than once per second
+
+    const syncFromDisk = () => {
+      // Debounce to prevent rapid re-syncs
+      const now = Date.now();
+      if (now - lastSyncTime < SYNC_DEBOUNCE_MS) return;
+      lastSyncTime = now;
+
+      if (!isLoading) {
+        // Reload from disk to catch any updates that happened while unfocused
+        loadHistory();
+        // Notify parent to re-check build status too
+        onVersionChange?.();
+      }
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        syncFromDisk();
+      }
+    };
+
+    const handleFocus = () => {
+      syncFromDisk();
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('focus', handleFocus);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', handleFocus);
+    };
+  }, [loadHistory, isLoading, onVersionChange]);
 
   // Save chat history when messages change (after initial load)
   // Uses a queue to prevent race conditions when multiple saves are triggered
@@ -105,6 +156,18 @@ export function ChatPanel({ project }: ChatPanelProps) {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, streamingContent]);
 
+  // Rotate through thinking phrases while loading
+  useEffect(() => {
+    if (!isLoading) {
+      setThinkingPhraseIndex(0);
+      return;
+    }
+    const interval = setInterval(() => {
+      setThinkingPhraseIndex((i) => (i + 1) % THINKING_PHRASES.length);
+    }, 10000);
+    return () => clearInterval(interval);
+  }, [isLoading]);
+
   const handleSend = useCallback(async (content: string) => {
     // Use ref for current messages (avoids stale closure issues)
     const currentMessages = messagesRef.current;
@@ -137,7 +200,7 @@ export function ChatPanel({ project }: ChatPanelProps) {
     // Clear and activate output panel
     clear();
     setActive(true);
-    addLine(`> Sending to Claude: "${content.substring(0, 50)}${content.length > 50 ? '...' : ''}"`);
+    addLine(`> Processing: "${content.substring(0, 50)}${content.length > 50 ? '...' : ''}"`);
     addLine('');
 
     // Listen for streaming events - filter by project path to prevent cross-talk
@@ -155,7 +218,7 @@ export function ChatPanel({ project }: ChatPanelProps) {
         setStreamingContent(streamingContentRef.current);
         addLine(`[ERROR] ${data.message}`);
       } else if (data.type === 'start') {
-        addLine('[Claude started working...]');
+        addLine('[Started working...]');
       }
     });
 
@@ -263,6 +326,8 @@ export function ChatPanel({ project }: ChatPanelProps) {
       setMessages(state.messages);
       setActiveVersion(state.activeVersion);
       addLine(`[${direction === 'Reverting' ? 'Reverted' : 'Restored'} to v${version}]`);
+      // Notify parent that version changed so it can update build status
+      onVersionChange?.();
     } catch (err) {
       addLine(`[ERROR] Failed to change version: ${err}`);
     } finally {
@@ -270,8 +335,27 @@ export function ChatPanel({ project }: ChatPanelProps) {
     }
   }, [project.path, messages, activeVersion, addLine, setClaudeBusy, clearClaudeBusyIfMatch]);
 
+  // Calculate current effective version for header display
+  const latestVersionForHeader = messages.reduce((max, m) =>
+    m.version && m.version > max ? m.version : max, 0);
+  const effectiveVersionForHeader = activeVersion ?? latestVersionForHeader;
+
   return (
     <div className="h-full flex flex-col bg-bg-secondary rounded-xl border border-border overflow-hidden">
+      {/* Version header */}
+      {effectiveVersionForHeader > 0 && (
+        <div className="px-4 py-2 border-b border-border flex items-center gap-2">
+          <span className="text-xs px-2 py-0.5 rounded-full bg-accent/20 text-accent font-medium">
+            v{effectiveVersionForHeader}
+          </span>
+          {activeVersion && activeVersion < latestVersionForHeader && (
+            <span className="text-xs text-warning">
+              (older version - latest is v{latestVersionForHeader})
+            </span>
+          )}
+        </div>
+      )}
+
       {/* Messages area */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {messages.length === 0 && !isLoading ? (
@@ -284,7 +368,7 @@ export function ChatPanel({ project }: ChatPanelProps) {
               </div>
               <h3 className="text-lg font-medium text-text-primary mb-2">Start building {project.name}</h3>
               <p className="text-sm text-text-muted">
-                Describe what features you want to add. Claude will modify the plugin code for you.
+                Describe what features you want to add and the code will be updated for you.
               </p>
               <div className="mt-4 text-xs text-text-muted">
                 <p className="mb-1">Try something like:</p>
@@ -337,9 +421,14 @@ export function ChatPanel({ project }: ChatPanelProps) {
             {isLoading && (
               <div className="flex justify-start">
                 <div className="rounded-2xl rounded-bl-md px-4 py-3 bg-bg-tertiary">
-                  <div className="flex items-center gap-2 text-text-muted">
-                    <div className="w-2 h-2 rounded-full bg-accent animate-pulse" />
-                    <span className="text-sm">Claude is working...</span>
+                  <div className="flex items-center gap-3 text-text-muted">
+                    <div className="flex gap-1">
+                      <div className="w-1.5 h-4 rounded-full bg-accent animate-[pulse_1s_ease-in-out_infinite]" style={{ animationDelay: '0ms' }} />
+                      <div className="w-1.5 h-6 rounded-full bg-accent animate-[pulse_1s_ease-in-out_infinite]" style={{ animationDelay: '150ms' }} />
+                      <div className="w-1.5 h-4 rounded-full bg-accent animate-[pulse_1s_ease-in-out_infinite]" style={{ animationDelay: '300ms' }} />
+                      <div className="w-1.5 h-5 rounded-full bg-accent animate-[pulse_1s_ease-in-out_infinite]" style={{ animationDelay: '450ms' }} />
+                    </div>
+                    <span className="text-sm transition-all duration-300">{THINKING_PHRASES[thinkingPhraseIndex]}</span>
                   </div>
                   <p className="text-xs text-text-muted mt-2">
                     View progress in the output panel below

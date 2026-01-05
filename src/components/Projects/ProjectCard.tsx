@@ -62,9 +62,23 @@ export function ProjectCard({ project, isActive, isBusy, busyType, onClick, onDe
           }`}>
             {isBusy ? (
               <Spinner size="sm" className={isActive ? 'text-accent' : 'text-text-muted'} />
-            ) : (
+            ) : project.template === 'instrument' ? (
+              // Instrument icon (piano keys)
               <svg className={`w-5 h-5 ${isActive ? 'text-accent' : 'text-text-muted'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M9 9l10.5-3m0 6.553v3.75a2.25 2.25 0 01-1.632 2.163l-1.32.377a1.803 1.803 0 11-.99-3.467l2.31-.66a2.25 2.25 0 001.632-2.163zm0 0V2.25L9 5.25v10.303m0 0v3.75a2.25 2.25 0 01-1.632 2.163l-1.32.377a1.803 1.803 0 01-.99-3.467l2.31-.66A2.25 2.25 0 009 15.553z" />
+                <rect x="2" y="4" width="20" height="16" rx="2" />
+                <path d="M6 4v10M10 4v10M14 4v10M18 4v10" />
+                <rect x="5" y="4" width="2" height="6" fill="currentColor" />
+                <rect x="9" y="4" width="2" height="6" fill="currentColor" />
+                <rect x="13" y="4" width="2" height="6" fill="currentColor" />
+                <rect x="17" y="4" width="2" height="6" fill="currentColor" />
+              </svg>
+            ) : (
+              // Effect icon (mixer sliders)
+              <svg className={`w-5 h-5 ${isActive ? 'text-accent' : 'text-text-muted'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                <path strokeLinecap="round" d="M6 4v16M12 4v16M18 4v16" />
+                <rect x="4" y="6" width="4" height="3" rx="1" fill="currentColor" />
+                <rect x="10" y="12" width="4" height="3" rx="1" fill="currentColor" />
+                <rect x="16" y="9" width="4" height="3" rx="1" fill="currentColor" />
               </svg>
             )}
           </div>
@@ -75,7 +89,7 @@ export function ProjectCard({ project, isActive, isBusy, busyType, onClick, onDe
               </span>
               {isBusy && (
                 <span className="text-xs text-text-muted flex-shrink-0">
-                  {busyType === 'claude' ? 'AI...' : 'Building...'}
+                  {busyType === 'claude' ? 'Working...' : 'Building...'}
                 </span>
               )}
             </div>

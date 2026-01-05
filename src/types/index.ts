@@ -13,28 +13,64 @@ export interface PrerequisiteStatus {
   claude_auth: CheckResult;
 }
 
+export interface DawPathConfig {
+  vst3: string;
+  clap: string;
+}
+
+export interface DawPaths {
+  reaper: DawPathConfig;
+  ableton: DawPathConfig;
+  flStudio: DawPathConfig;
+  logic: DawPathConfig;
+  other: DawPathConfig;
+}
+
+export interface CustomThemeColors {
+  accent: string;
+  bgPrimary: string;
+  bgSecondary: string;
+  bgTertiary: string;
+  textPrimary: string;
+  textSecondary: string;
+}
+
 export interface AppConfig {
   workspacePath: string;
   outputPath: string;
   buildFormats: string[];
   autoOpenOutput: boolean;
   showNotifications: boolean;
-  theme: 'dark' | 'light';
+  theme: 'dark' | 'light' | 'custom';
+  customColors: CustomThemeColors;
   setupComplete: boolean;
+  // Branding
+  vendorName: string;
+  vendorUrl: string;
+  vendorEmail: string;
+  // DAW plugin paths
+  dawPaths: DawPaths;
 }
 
 export interface ProjectMeta {
   id: string;
   name: string;
   description: string;
+  template?: PluginTemplate;
   created_at: string;
   updated_at: string;
   path: string;
 }
 
+export type PluginTemplate = 'effect' | 'instrument';
+
 export interface CreateProjectInput {
   name: string;
   description: string;
+  template: PluginTemplate;
+  vendorName?: string;
+  vendorUrl?: string;
+  vendorEmail?: string;
 }
 
 export interface ChatMessage {

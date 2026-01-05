@@ -33,13 +33,22 @@ pub enum BuildStreamEvent {
 #[tauri::command]
 pub async fn build_project(
     project_name: String,
+    version: u32,
     window: tauri::Window,
 ) -> Result<BuildResult, String> {
     // Ensure workspace structure exists (creates shared xtask if needed)
     ensure_workspace()?;
 
     let workspace_path = get_workspace_path();
-    let output_path = get_output_path();
+    let base_output_path = get_output_path();
+
+    // Create versioned output folder: output/{project_name}/v{version}/
+    let output_path = base_output_path
+        .join(&project_name)
+        .join(format!("v{}", version));
+
+    std::fs::create_dir_all(&output_path)
+        .map_err(|e| format!("Failed to create versioned output directory: {}", e))?;
 
     // Emit start event
     let _ = window.emit("build-stream", BuildStreamEvent::Start);
@@ -125,6 +134,15 @@ pub async fn build_project(
                 // Check if this is our plugin's bundle
                 if file_name.contains(&project_name) || file_name.contains(&project_name.replace('-', "_")) {
                     let dest = output_path.join(path.file_name().unwrap());
+
+                    // Remove existing bundle first to ensure clean copy
+                    if dest.exists() {
+                        if dest.is_dir() {
+                            let _ = std::fs::remove_dir_all(&dest);
+                        } else {
+                            let _ = std::fs::remove_file(&dest);
+                        }
+                    }
 
                     // Copy directory (for .vst3/.clap bundles) or file
                     if path.is_dir() {

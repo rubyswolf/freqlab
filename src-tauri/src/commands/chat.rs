@@ -135,6 +135,38 @@ pub async fn update_active_version(
     Ok(())
 }
 
+/// Get the current effective version for a project
+/// Returns activeVersion if set, otherwise max version from messages, defaulting to 1
+#[tauri::command]
+pub async fn get_current_version(project_path: String) -> Result<u32, String> {
+    let chat_file = get_chat_file_path(&project_path);
+
+    if !chat_file.exists() {
+        return Ok(1); // Default to v1 for new projects
+    }
+
+    let content = fs::read_to_string(&chat_file)
+        .map_err(|e| format!("Failed to read chat history: {}", e))?;
+
+    let history: ChatHistory = serde_json::from_str(&content)
+        .map_err(|e| format!("Failed to parse chat history: {}", e))?;
+
+    // If activeVersion is explicitly set, use it
+    if let Some(active) = history.active_version {
+        return Ok(active);
+    }
+
+    // Otherwise, find the max version from messages
+    let max_version = history
+        .messages
+        .iter()
+        .filter_map(|m| m.version)
+        .max()
+        .unwrap_or(1); // Default to v1 if no versions found
+
+    Ok(max_version)
+}
+
 /// Set the active version and checkout that commit
 #[tauri::command]
 pub async fn set_active_version(

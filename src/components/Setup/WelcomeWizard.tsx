@@ -63,7 +63,7 @@ export function WelcomeWizard() {
                 <div>
                   <h1 className="text-3xl font-bold gradient-text">freqlab</h1>
                   <p className="text-text-secondary mt-2">
-                    Build VST plugins with AI assistance
+                    Build VST/CLAP plugins with natural language
                   </p>
                 </div>
               </div>
@@ -77,7 +77,7 @@ export function WelcomeWizard() {
                     </svg>
                   }
                   title="Describe your plugin"
-                  description="Tell Claude what you want to build in plain English"
+                  description="Tell freqlab what you want to build in plain English"
                 />
                 <FeatureCard
                   icon={
@@ -154,7 +154,7 @@ export function WelcomeWizard() {
 
         {/* Subtle branding */}
         <p className="text-center text-text-muted text-xs mt-6">
-          Powered by Claude Code & nih-plug
+          Powered by nih-plug
         </p>
       </div>
     </div>

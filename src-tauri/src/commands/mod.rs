@@ -4,3 +4,5 @@ pub mod claude;
 pub mod build;
 pub mod git;
 pub mod chat;
+pub mod publish;
+pub mod logging;

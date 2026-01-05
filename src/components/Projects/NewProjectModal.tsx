@@ -1,18 +1,22 @@
 import { useState } from 'react';
 import { Modal } from '../Common/Modal';
 import { Spinner } from '../Common/Spinner';
+import { useSettingsStore } from '../../stores/settingsStore';
+import type { CreateProjectInput, PluginTemplate } from '../../types';
 
 interface NewProjectModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSubmit: (name: string, description: string) => Promise<void>;
+  onSubmit: (input: CreateProjectInput) => Promise<void>;
 }
 
 export function NewProjectModal({ isOpen, onClose, onSubmit }: NewProjectModalProps) {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
+  const [template, setTemplate] = useState<PluginTemplate>('effect');
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const { vendorName, vendorUrl, vendorEmail } = useSettingsStore();
 
   const validateName = (value: string): string | null => {
     if (!value) return 'Name is required';
@@ -37,9 +41,17 @@ export function NewProjectModal({ isOpen, onClose, onSubmit }: NewProjectModalPr
     setIsSubmitting(true);
 
     try {
-      await onSubmit(name, description);
+      await onSubmit({
+        name,
+        description,
+        template,
+        vendorName: vendorName || 'freqlab',
+        vendorUrl: vendorUrl || '',
+        vendorEmail: vendorEmail || '',
+      });
       setName('');
       setDescription('');
+      setTemplate('effect');
       onClose();
     } catch (err) {
       setError(String(err));
@@ -76,6 +88,60 @@ export function NewProjectModal({ isOpen, onClose, onSubmit }: NewProjectModalPr
         </div>
 
         <div>
+          <label className="block text-sm font-medium text-text-secondary mb-2">
+            Plugin Type
+          </label>
+          <div className="grid grid-cols-2 gap-3">
+            <button
+              type="button"
+              onClick={() => setTemplate('effect')}
+              className={`p-3 rounded-xl border-2 transition-all text-left ${
+                template === 'effect'
+                  ? 'border-accent bg-accent/5'
+                  : 'border-border hover:border-text-muted'
+              }`}
+            >
+              <div className="flex items-center gap-2 mb-1">
+                <svg className={`w-4 h-4 ${template === 'effect' ? 'text-accent' : 'text-text-muted'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                  <path strokeLinecap="round" d="M6 4v16M12 4v16M18 4v16" />
+                  <rect x="4" y="6" width="4" height="3" rx="1" fill="currentColor" />
+                  <rect x="10" y="12" width="4" height="3" rx="1" fill="currentColor" />
+                  <rect x="16" y="9" width="4" height="3" rx="1" fill="currentColor" />
+                </svg>
+                <span className={`text-sm font-medium ${template === 'effect' ? 'text-accent' : 'text-text-primary'}`}>
+                  Effect
+                </span>
+              </div>
+              <p className="text-xs text-text-muted">Processes audio (EQ, delay)</p>
+            </button>
+            <button
+              type="button"
+              onClick={() => setTemplate('instrument')}
+              className={`p-3 rounded-xl border-2 transition-all text-left ${
+                template === 'instrument'
+                  ? 'border-accent bg-accent/5'
+                  : 'border-border hover:border-text-muted'
+              }`}
+            >
+              <div className="flex items-center gap-2 mb-1">
+                <svg className={`w-4 h-4 ${template === 'instrument' ? 'text-accent' : 'text-text-muted'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                  <rect x="2" y="4" width="20" height="16" rx="2" />
+                  <path d="M6 4v10M10 4v10M14 4v10M18 4v10" />
+                  <rect x="5" y="4" width="2" height="6" fill="currentColor" />
+                  <rect x="9" y="4" width="2" height="6" fill="currentColor" />
+                  <rect x="13" y="4" width="2" height="6" fill="currentColor" />
+                  <rect x="17" y="4" width="2" height="6" fill="currentColor" />
+                </svg>
+                <span className={`text-sm font-medium ${template === 'instrument' ? 'text-accent' : 'text-text-primary'}`}>
+                  Instrument
+                </span>
+              </div>
+              <p className="text-xs text-text-muted">Generates sound from MIDI (synth)</p>
+            </button>
+          </div>
+        </div>
+
+        <div>
           <label htmlFor="description" className="block text-sm font-medium text-text-secondary mb-2">
             Description
           </label>
@@ -88,7 +154,7 @@ export function NewProjectModal({ isOpen, onClose, onSubmit }: NewProjectModalPr
             className="w-full px-4 py-2.5 bg-bg-primary border border-border rounded-xl text-text-primary placeholder-text-muted focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-colors resize-none"
           />
           <p className="mt-1.5 text-xs text-text-muted">
-            You can chat with Claude to build out the features
+            You can refine and add features through conversation
           </p>
         </div>
 
