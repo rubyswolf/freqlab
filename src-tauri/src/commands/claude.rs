@@ -201,35 +201,46 @@ fn get_component_description(component_id: &str) -> &'static str {
     }
 }
 
+/// Local nih-plug API reference bundled at compile time (fallback)
+const NIH_PLUG_REFERENCE: &str = include_str!("../../resources/nih-plug-reference.md");
+
 /// Build the system context for Claude when working on a plugin project
 fn build_context(project_name: &str, description: &str, components: Option<&Vec<String>>, is_first_message: bool) -> String {
+    // Get path to local nih-plug repo for documentation
+    let nih_plug_docs_path = super::projects::get_nih_plug_docs_path();
+    let docs_path_str = nih_plug_docs_path.to_string_lossy();
+
     let mut context = format!(
         r#"You are helping develop a VST audio plugin using nih-plug (Rust).
 
 Project: {project_name}
 Description: {description}
 
-IMPORTANT: For nih-plug API reference, always check the official docs at:
-https://nih-plug.robbertvanderhelm.nl/nih_plug/index.html
+## nih-plug Documentation
 
-Key nih-plug conventions:
-- Plugin struct holds params as Arc<PluginParams>
-- Use #[derive(Params)] for parameter structs
-- FloatParam for continuous values, IntParam for integers, BoolParam for toggles
-- Process audio in the `process` method, iterate over buffer.iter_samples()
-- Use .smoothed.next() for parameter smoothing
-- Export with nih_export_vst3! and nih_export_clap! macros
+A local clone of the nih-plug repository is available at: {docs_path}
+- Use Grep/Read to search the repo for API examples and syntax
+- Key directories: src/lib.rs (main exports), src/params/ (parameter types), src/buffer.rs (audio buffers)
+- The plugins/ directory contains example plugins you can reference
+
+## Quick Reference
+{nih_plug_reference}
+
+## Guidelines
 
 When modifying the plugin:
 1. Read src/lib.rs first to understand current state
 2. Edit src/lib.rs with your changes
 3. Keep code clean and well-commented
 4. Use proper DSP practices (avoid denormals, handle edge cases)
-5. Briefly summarize what you changed after making edits
+5. Always use the safety_limit() function on output to prevent clipping
+6. Briefly summarize what you changed after making edits
 
 The user will describe what they want. Make the changes directly to the code."#,
         project_name = project_name,
-        description = description
+        description = description,
+        docs_path = docs_path_str,
+        nih_plug_reference = NIH_PLUG_REFERENCE
     );
 
     // Add component scaffolding instructions for first message of new projects with components
@@ -303,7 +314,8 @@ pub async fn send_to_claude(
         message.clone(),
         "--verbose".to_string(),
         "--allowedTools".to_string(),
-        "Edit,Write,Read".to_string(),
+        // Allow file ops, bash for cargo commands, grep/glob for searching, and web access
+        "Edit,Write,Read,Bash,Grep,Glob,WebSearch,WebFetch".to_string(),
         "--output-format".to_string(),
         "stream-json".to_string(),
         "--max-turns".to_string(),

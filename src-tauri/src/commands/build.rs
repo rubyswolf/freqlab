@@ -155,6 +155,14 @@ pub async fn build_project(
             }
         }
 
+        // Clear macOS quarantine attributes to avoid Gatekeeper issues
+        #[cfg(target_os = "macos")]
+        for artifact_path in &copied_files {
+            let _ = std::process::Command::new("xattr")
+                .args(["-cr", artifact_path])
+                .output();
+        }
+
         let output_str = output_path.to_string_lossy().to_string();
 
         let _ = window.emit("build-stream", BuildStreamEvent::Done {

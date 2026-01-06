@@ -164,11 +164,7 @@ export function MainLayout() {
         checkBuildExists();
         addToast({
           type: 'success',
-          message: 'Build successful! Plugin copied to output folder.',
-          action: {
-            label: 'Open Output Folder',
-            onClick: handleOpenOutputFolder,
-          },
+          message: 'Build successful!',
         });
       } else {
         const errorMsg = result.error || 'Unknown error';

@@ -11,6 +11,7 @@ pub struct AttachmentInput {
     pub source_path: String,
     #[serde(rename = "mimeType")]
     pub mime_type: String,
+    #[allow(dead_code)] // Received from frontend but we get actual size from file metadata
     pub size: u64,
 }
 

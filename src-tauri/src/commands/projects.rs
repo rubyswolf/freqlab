@@ -41,6 +41,44 @@ fn get_projects_path() -> PathBuf {
     get_workspace_path().join("projects")
 }
 
+/// Get path to local nih-plug documentation repo
+pub fn get_nih_plug_docs_path() -> PathBuf {
+    get_workspace_path().join(".nih-plug-docs")
+}
+
+/// Clone or update the nih-plug repo for local documentation
+fn ensure_nih_plug_docs() -> Result<(), String> {
+    let docs_path = get_nih_plug_docs_path();
+
+    if docs_path.exists() {
+        // Repo already cloned - optionally pull updates (skip for now to avoid slowdown)
+        return Ok(());
+    }
+
+    // Clone the nih-plug repo (shallow clone for speed)
+    eprintln!("[INFO] Cloning nih-plug repo for local documentation...");
+    let output = std::process::Command::new("git")
+        .args([
+            "clone",
+            "--depth", "1",
+            "--single-branch",
+            "https://github.com/robbert-vdh/nih-plug.git",
+            docs_path.to_str().unwrap_or(".nih-plug-docs"),
+        ])
+        .output()
+        .map_err(|e| format!("Failed to clone nih-plug repo: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        // Don't fail workspace init if clone fails - just warn
+        eprintln!("[WARN] Could not clone nih-plug docs: {}", stderr);
+    } else {
+        eprintln!("[INFO] nih-plug repo cloned successfully");
+    }
+
+    Ok(())
+}
+
 /// Ensure the workspace directories exist and workspace Cargo.toml is set up
 pub fn ensure_workspace() -> Result<(), String> {
     let workspace = get_workspace_path();
@@ -102,6 +140,9 @@ xtask = "run --package xtask --release --"
         fs::write(&cargo_config, config_content)
             .map_err(|e| format!("Failed to create cargo config: {}", e))?;
     }
+
+    // Clone nih-plug repo for local documentation (non-blocking on failure)
+    let _ = ensure_nih_plug_docs();
 
     Ok(())
 }
@@ -191,7 +232,7 @@ description = "{description}"
 crate-type = ["cdylib"]
 
 [dependencies]
-nih_plug = {{ git = "https://github.com/robbert-vdh/nih-plug.git", features = ["assert_process_allocs"] }}
+nih_plug = {{ git = "https://github.com/robbert-vdh/nih-plug.git" }}
 
 [profile.release]
 lto = "thin"
@@ -375,6 +416,12 @@ fn generate_effect_template(
         r#"use nih_plug::prelude::*;
 use std::sync::Arc;
 
+/// Safety limiter - prevents output from exceeding 0dB (speaker protection)
+#[inline]
+fn safety_limit(sample: f32) -> f32 {{
+    sample.clamp(-1.0, 1.0)
+}}
+
 /// {description}
 struct {pascal_name} {{
     params: Arc<{pascal_name}Params>,
@@ -447,6 +494,8 @@ impl Plugin for {pascal_name} {{
             let gain = self.params.gain.smoothed.next();
             for sample in channel_samples {{
                 *sample *= gain;
+                // Safety limiter - prevent clipping/speaker damage
+                *sample = safety_limit(*sample);
             }}
         }}
         ProcessStatus::Normal
@@ -494,6 +543,12 @@ fn generate_instrument_template(
     format!(
         r#"use nih_plug::prelude::*;
 use std::sync::Arc;
+
+/// Safety limiter - prevents output from exceeding 0dB (speaker protection)
+#[inline]
+fn safety_limit(sample: f32) -> f32 {{
+    sample.clamp(-1.0, 1.0)
+}}
 
 /// {description}
 struct {pascal_name} {{
@@ -625,7 +680,8 @@ impl Plugin for {pascal_name} {{
             }};
 
             for output_sample in channel_samples {{
-                *output_sample = sample;
+                // Safety limiter - prevent clipping/speaker damage
+                *output_sample = safety_limit(sample);
             }}
         }}
 
