@@ -9,9 +9,9 @@
   --color-text-primary: var(--theme-text-primary, #fafafa);
   --color-text-secondary: var(--theme-text-secondary, #a1a1aa);
   --color-text-muted: var(--theme-text-muted, #71717a);
-  --color-accent: var(--theme-accent, #8b5cf6);
-  --color-accent-hover: var(--theme-accent-hover, #a78bfa);
-  --color-accent-subtle: var(--theme-accent-subtle, rgba(139, 92, 246, 0.15));
+  --color-accent: var(--theme-accent, #2DA86E);
+  --color-accent-hover: var(--theme-accent-hover, #34B87A);
+  --color-accent-subtle: var(--theme-accent-subtle, rgba(76, 219, 153, 0.15));
   --color-success: #10b981;
   --color-success-subtle: rgba(16, 185, 129, 0.15);
   --color-warning: #f59e0b;
@@ -32,9 +32,9 @@
   --theme-text-primary: #fafafa;
   --theme-text-secondary: #a1a1aa;
   --theme-text-muted: #71717a;
-  --theme-accent: #8b5cf6;
-  --theme-accent-hover: #a78bfa;
-  --theme-accent-subtle: rgba(139, 92, 246, 0.15);
+  --theme-accent: #2DA86E;
+  --theme-accent-hover: #34B87A;
+  --theme-accent-subtle: rgba(76, 219, 153, 0.15);
   --theme-border: #27272a;
   --theme-border-subtle: #1f1f1f;
 }
@@ -48,9 +48,9 @@
   --theme-text-primary: #171717;
   --theme-text-secondary: #525252;
   --theme-text-muted: #737373;
-  --theme-accent: #7c3aed;
-  --theme-accent-hover: #6d28d9;
-  --theme-accent-subtle: rgba(124, 58, 237, 0.1);
+  --theme-accent: #229660;
+  --theme-accent-hover: #1D8254;
+  --theme-accent-subtle: rgba(40, 166, 109, 0.12);
   --theme-border: #e5e5e5;
   --theme-border-subtle: #f0f0f0;
 }
@@ -74,6 +74,16 @@ body {
   margin: 0;
   background-color: var(--color-bg-primary);
   color: var(--color-text-primary);
+}
+
+/* Ensure all interactive elements have pointer cursor */
+button,
+[role="button"],
+a,
+input[type="checkbox"],
+input[type="radio"],
+select {
+  cursor: pointer;
 }
 
 /* Custom scrollbar */
@@ -132,7 +142,7 @@ body {
 
 /* Gradient text */
 .gradient-text {
-  background: linear-gradient(135deg, #8b5cf6 0%, #a78bfa 50%, #c4b5fd 100%);
+  background: linear-gradient(135deg, #2DA86E 0%, #36C07E 50%, #4CDB99 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;

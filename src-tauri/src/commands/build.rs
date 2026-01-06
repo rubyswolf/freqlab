@@ -29,6 +29,11 @@ pub enum BuildStreamEvent {
     Error { message: String },
 }
 
+/// Convert project name to Cargo package name (snake_case)
+fn to_package_name(name: &str) -> String {
+    name.replace('-', "_")
+}
+
 /// Build a plugin project using cargo xtask bundle
 #[tauri::command]
 pub async fn build_project(
@@ -53,10 +58,13 @@ pub async fn build_project(
     // Emit start event
     let _ = window.emit("build-stream", BuildStreamEvent::Start);
 
+    // Convert project name to Cargo package name (hyphens -> underscores)
+    let package_name = to_package_name(&project_name);
+
     // Run cargo xtask bundle from workspace root
     let mut child = Command::new("cargo")
         .current_dir(&workspace_path)
-        .args(["xtask", "bundle", &project_name, "--release"])
+        .args(["xtask", "bundle", &package_name, "--release"])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()

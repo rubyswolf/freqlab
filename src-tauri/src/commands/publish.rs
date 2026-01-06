@@ -1,5 +1,10 @@
 use serde::{Deserialize, Serialize};
+use std::fs::File;
+use std::io::{Read, Write};
 use std::path::PathBuf;
+use walkdir::WalkDir;
+use zip::write::SimpleFileOptions;
+use zip::ZipWriter;
 
 use super::logging::log_message;
 use super::projects::get_output_path;
@@ -234,4 +239,125 @@ pub async fn check_available_formats(
 pub struct AvailableFormats {
     pub vst3: bool,
     pub clap: bool,
+}
+
+#[derive(Serialize)]
+pub struct PackageResult {
+    pub success: bool,
+    pub zip_path: String,
+    pub included: Vec<String>,
+}
+
+/// Package plugin files into a zip archive for distribution
+#[tauri::command]
+pub async fn package_plugins(
+    project_name: String,
+    version: u32,
+    destination: String,
+) -> Result<PackageResult, String> {
+    let base_output_path = get_output_path();
+    let snake_name = project_name.replace('-', "_");
+
+    // Use versioned output folder: output/{project_name}/v{version}/
+    let output_path = base_output_path
+        .join(&project_name)
+        .join(format!("v{}", version));
+
+    let vst3_bundle = output_path.join(format!("{}.vst3", snake_name));
+    let clap_bundle = output_path.join(format!("{}.clap", snake_name));
+
+    let has_vst3 = vst3_bundle.exists();
+    let has_clap = clap_bundle.exists();
+
+    if !has_vst3 && !has_clap {
+        return Err("No built plugins found. Build the project first.".to_string());
+    }
+
+    // Create zip file path
+    let zip_filename = format!("{}_v{}.zip", project_name, version);
+    let zip_path = if destination.ends_with(".zip") {
+        destination.clone()
+    } else {
+        format!("{}/{}", destination, zip_filename)
+    };
+
+    log_message("INFO", "package", &format!("Creating package at: {}", zip_path));
+
+    let file = File::create(&zip_path)
+        .map_err(|e| format!("Failed to create zip file: {}", e))?;
+
+    let mut zip = ZipWriter::new(file);
+    let options = SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Deflated)
+        .unix_permissions(0o755);
+
+    let mut included = Vec::new();
+
+    // Add VST3 bundle if exists
+    if has_vst3 {
+        add_directory_to_zip(&mut zip, &vst3_bundle, &format!("{}.vst3", snake_name), options)?;
+        included.push(format!("{}.vst3", snake_name));
+        log_message("INFO", "package", &format!("Added {}.vst3 to package", snake_name));
+    }
+
+    // Add CLAP bundle if exists
+    if has_clap {
+        add_directory_to_zip(&mut zip, &clap_bundle, &format!("{}.clap", snake_name), options)?;
+        included.push(format!("{}.clap", snake_name));
+        log_message("INFO", "package", &format!("Added {}.clap to package", snake_name));
+    }
+
+    zip.finish().map_err(|e| format!("Failed to finalize zip: {}", e))?;
+
+    log_message("INFO", "package", &format!("Package created successfully: {}", zip_path));
+
+    Ok(PackageResult {
+        success: true,
+        zip_path,
+        included,
+    })
+}
+
+/// Add a directory recursively to a zip archive
+fn add_directory_to_zip(
+    zip: &mut ZipWriter<File>,
+    source: &std::path::Path,
+    prefix: &str,
+    options: SimpleFileOptions,
+) -> Result<(), String> {
+    for entry in WalkDir::new(source) {
+        let entry = entry.map_err(|e| format!("Failed to read directory: {}", e))?;
+        let path = entry.path();
+        let relative_path = path
+            .strip_prefix(source)
+            .map_err(|e| format!("Failed to get relative path: {}", e))?;
+
+        // Create path with prefix (bundle name) as root folder
+        let relative_str = relative_path.to_string_lossy().replace('\\', "/");
+        let zip_path_str = if relative_str.is_empty() {
+            prefix.to_string()
+        } else {
+            format!("{}/{}", prefix, relative_str)
+        };
+
+        if path.is_file() {
+            zip.start_file(&zip_path_str, options)
+                .map_err(|e| format!("Failed to add file to zip: {}", e))?;
+
+            let mut file = File::open(path)
+                .map_err(|e| format!("Failed to open file: {}", e))?;
+
+            let mut buffer = Vec::new();
+            file.read_to_end(&mut buffer)
+                .map_err(|e| format!("Failed to read file: {}", e))?;
+
+            zip.write_all(&buffer)
+                .map_err(|e| format!("Failed to write to zip: {}", e))?;
+        } else if path.is_dir() && !relative_str.is_empty() {
+            zip.add_directory(&zip_path_str, options)
+                .map_err(|e| format!("Failed to add directory to zip: {}", e))?;
+        }
+    }
+
+    Ok(())
 }

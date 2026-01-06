@@ -110,7 +110,18 @@ export function NewProjectModal({ isOpen, onClose, onSubmit }: NewProjectModalPr
   };
 
   const handleNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, '');
+    // Sanitize input to valid plugin name:
+    // 1. Lowercase everything
+    // 2. Replace spaces with hyphens (for readability)
+    // 3. Remove any remaining invalid characters
+    // 4. Collapse multiple hyphens into one
+    // 5. Remove leading/trailing hyphens
+    const value = e.target.value
+      .toLowerCase()
+      .replace(/\s+/g, '-')           // spaces → hyphens
+      .replace(/[^a-z0-9_-]/g, '')    // remove invalid chars
+      .replace(/-+/g, '-')            // collapse multiple hyphens
+      .replace(/^-|-$/g, '');         // trim leading/trailing hyphens
     setName(value);
     setError(null);
   };

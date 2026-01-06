@@ -11,7 +11,7 @@ const defaultDawPaths: DawPaths = {
 };
 
 const defaultCustomColors: CustomThemeColors = {
-  accent: '#8b5cf6',
+  accent: '#2DA86E',
   bgPrimary: '#0f0f0f',
   bgSecondary: '#171717',
   bgTertiary: '#1f1f1f',

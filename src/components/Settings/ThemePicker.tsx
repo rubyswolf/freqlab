@@ -146,7 +146,7 @@ export function ThemePicker() {
               <div className="flex h-full">
                 <div className="w-1/4 bg-white/5" />
                 <div className="flex-1 p-1">
-                  <div className="h-0.5 w-2/3 bg-[#8b5cf6] rounded mb-0.5" />
+                  <div className="h-0.5 w-2/3 bg-[#2DA86E] rounded mb-0.5" />
                   <div className="h-0.5 w-1/2 bg-white/10 rounded" />
                 </div>
               </div>
@@ -175,7 +175,7 @@ export function ThemePicker() {
               <div className="flex h-full">
                 <div className="w-1/4 bg-black/5" />
                 <div className="flex-1 p-1">
-                  <div className="h-0.5 w-2/3 bg-[#7c3aed] rounded mb-0.5" />
+                  <div className="h-0.5 w-2/3 bg-[#229660] rounded mb-0.5" />
                   <div className="h-0.5 w-1/2 bg-black/10 rounded" />
                 </div>
               </div>

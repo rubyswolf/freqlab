@@ -187,12 +187,12 @@ export function ChatInput({ onSend, disabled = false, placeholder = 'Describe wh
         </div>
       )}
 
-      <div className="flex items-end gap-3">
+      <div className="flex items-center gap-2">
         {/* Attachment button */}
         <button
           onClick={handleFileSelect}
           disabled={disabled}
-          className="p-3 bg-bg-tertiary hover:bg-bg-elevated disabled:opacity-50 text-text-muted hover:text-text-primary border border-border rounded-xl transition-all duration-200 disabled:cursor-not-allowed flex-shrink-0"
+          className="h-11 w-11 bg-bg-tertiary hover:bg-bg-elevated disabled:opacity-50 text-text-muted hover:text-text-primary border border-border rounded-xl transition-all duration-200 disabled:cursor-not-allowed flex-shrink-0 flex items-center justify-center"
           title="Attach files"
         >
           <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
@@ -209,13 +209,13 @@ export function ChatInput({ onSend, disabled = false, placeholder = 'Describe wh
             placeholder={placeholder}
             disabled={disabled}
             rows={1}
-            className="w-full px-4 py-3 bg-bg-primary border border-border rounded-xl text-text-primary placeholder-text-muted focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-colors resize-none disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full px-4 py-2.5 bg-bg-primary border border-border rounded-xl text-text-primary placeholder-text-muted focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-colors resize-none disabled:opacity-50 disabled:cursor-not-allowed leading-normal"
           />
         </div>
         <button
           onClick={handleSubmit}
           disabled={disabled || (!value.trim() && attachments.length === 0)}
-          className="p-3 bg-accent hover:bg-accent-hover disabled:bg-bg-tertiary text-white disabled:text-text-muted rounded-xl transition-all duration-200 disabled:cursor-not-allowed hover:shadow-lg hover:shadow-accent/25 disabled:shadow-none flex-shrink-0"
+          className="h-11 w-11 bg-accent hover:bg-accent-hover disabled:bg-bg-tertiary text-white disabled:text-text-muted rounded-xl transition-all duration-200 disabled:cursor-not-allowed hover:shadow-lg hover:shadow-accent/25 disabled:shadow-none flex-shrink-0 flex items-center justify-center"
         >
           {disabled ? (
             <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">

@@ -5,8 +5,8 @@
   <!-- Gradient definition -->
   <defs>
     <linearGradient id="waveGrad" x1="200" y1="200" x2="824" y2="824" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#8b5cf6"/>
-      <stop offset="1" stop-color="#a78bfa"/>
+      <stop stop-color="#2DA86E"/>
+      <stop offset="1" stop-color="#36C07E"/>
     </linearGradient>
   </defs>
 

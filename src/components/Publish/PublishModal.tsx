@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { save } from '@tauri-apps/plugin-dialog';
 import { Modal } from '../Common/Modal';
 import { Spinner } from '../Common/Spinner';
 import { useSettingsStore } from '../../stores/settingsStore';
@@ -35,6 +36,12 @@ interface PublishResult {
   errors: string[];
 }
 
+interface PackageResult {
+  success: boolean;
+  zip_path: string;
+  included: string[];
+}
+
 const DAW_LABELS: Record<keyof DawPaths, string> = {
   reaper: 'REAPER',
   ableton: 'Ableton Live',
@@ -48,7 +55,9 @@ export function PublishModal({ isOpen, onClose, project, onSuccess }: PublishMod
   const [selectedDaws, setSelectedDaws] = useState<Set<keyof DawPaths>>(new Set());
   const [formats, setFormats] = useState<AvailableFormats | null>(null);
   const [isPublishing, setIsPublishing] = useState(false);
+  const [isPackaging, setIsPackaging] = useState(false);
   const [result, setResult] = useState<PublishResult | null>(null);
+  const [packageResult, setPackageResult] = useState<PackageResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [currentVersion, setCurrentVersion] = useState<number>(1);
 
@@ -56,6 +65,7 @@ export function PublishModal({ isOpen, onClose, project, onSuccess }: PublishMod
   useEffect(() => {
     if (isOpen) {
       setResult(null);
+      setPackageResult(null);
       setError(null);
       setFormats(null);
 
@@ -132,9 +142,40 @@ export function PublishModal({ isOpen, onClose, project, onSuccess }: PublishMod
     }
   };
 
+  const handlePackage = async () => {
+    setIsPackaging(true);
+    setError(null);
+    setPackageResult(null);
+
+    try {
+      const destination = await save({
+        defaultPath: `${project.name}_v${currentVersion}.zip`,
+        filters: [{ name: 'ZIP Archive', extensions: ['zip'] }],
+      });
+
+      if (!destination) {
+        setIsPackaging(false);
+        return; // User cancelled
+      }
+
+      const result = await invoke<PackageResult>('package_plugins', {
+        projectName: project.name,
+        version: currentVersion,
+        destination,
+      });
+
+      setPackageResult(result);
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setIsPackaging(false);
+    }
+  };
+
   const handleClose = () => {
     setSelectedDaws(new Set());
     setResult(null);
+    setPackageResult(null);
     setError(null);
     onClose();
   };
@@ -303,6 +344,50 @@ export function PublishModal({ isOpen, onClose, project, onSuccess }: PublishMod
           </div>
         )}
 
+        {/* Package Result */}
+        {packageResult && (
+          <div className="p-3 rounded-lg border text-sm bg-success/10 border-success/30 text-success">
+            <p className="font-medium mb-1">Package created!</p>
+            <ul className="text-xs space-y-0.5">
+              {packageResult.included.map((file, i) => (
+                <li key={i}>{file}</li>
+              ))}
+            </ul>
+            <p className="text-xs text-text-muted mt-2 break-all">{packageResult.zip_path}</p>
+          </div>
+        )}
+
+        {/* Gatekeeper Warning */}
+        <div className="p-3 rounded-lg bg-warning-subtle border border-warning/20">
+          <div className="flex items-start gap-2">
+            <svg className="w-4 h-4 text-warning flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+            <div className="text-xs">
+              <p className="text-warning font-medium">macOS Gatekeeper</p>
+              <p className="text-text-secondary mt-0.5">
+                Plugins may be blocked by macOS security. Run in Terminal to allow:
+              </p>
+              <div className="mt-1.5 space-y-1">
+                <code className="block px-2 py-1 bg-bg-primary rounded text-[11px] text-text-primary font-mono">
+                  xattr -cr ~/Library/Audio/Plug-Ins/VST3/plugin.vst3
+                </code>
+                <code className="block px-2 py-1 bg-bg-primary rounded text-[11px] text-text-primary font-mono">
+                  xattr -cr ~/Library/Audio/Plug-Ins/CLAP/plugin.clap
+                </code>
+              </div>
+              <a
+                href="https://disable-gatekeeper.github.io/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-block mt-1.5 text-accent hover:text-accent-hover"
+              >
+                More details →
+              </a>
+            </div>
+          </div>
+        </div>
+
         {/* Actions */}
         <div className="flex gap-3 pt-2">
           <button
@@ -310,18 +395,33 @@ export function PublishModal({ isOpen, onClose, project, onSuccess }: PublishMod
             onClick={handleClose}
             className="flex-1 py-2.5 px-4 bg-bg-tertiary hover:bg-bg-elevated text-text-secondary hover:text-text-primary font-medium rounded-xl border border-border transition-all duration-200"
           >
-            {result ? 'Close' : 'Cancel'}
+            {result || packageResult ? 'Close' : 'Cancel'}
           </button>
-          {!result && (
-            <button
-              type="button"
-              onClick={handlePublish}
-              disabled={isPublishing || noFormatsAvailable || selectedDaws.size === 0}
-              className="flex-1 py-2.5 px-4 bg-accent hover:bg-accent-hover disabled:bg-bg-tertiary disabled:text-text-muted text-white font-medium rounded-xl transition-all duration-200 disabled:cursor-not-allowed hover:shadow-lg hover:shadow-accent/25 disabled:shadow-none flex items-center justify-center gap-2"
-            >
-              {isPublishing && <Spinner size="sm" />}
-              Publish
-            </button>
+          {!result && !packageResult && (
+            <>
+              <button
+                type="button"
+                onClick={handlePackage}
+                disabled={isPublishing || isPackaging || noFormatsAvailable || !formats}
+                className="py-2.5 px-4 bg-bg-tertiary hover:bg-bg-elevated disabled:bg-bg-tertiary disabled:text-text-muted text-text-primary font-medium rounded-xl border border-border transition-all duration-200 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                title="Package plugins into a zip file"
+              >
+                {isPackaging && <Spinner size="sm" />}
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5m8.25 3v6.75m0 0l-3-3m3 3l3-3M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z" />
+                </svg>
+                Package
+              </button>
+              <button
+                type="button"
+                onClick={handlePublish}
+                disabled={isPublishing || isPackaging || noFormatsAvailable || !formats || selectedDaws.size === 0}
+                className="flex-1 py-2.5 px-4 bg-accent hover:bg-accent-hover disabled:bg-bg-tertiary disabled:text-text-muted text-white font-medium rounded-xl transition-all duration-200 disabled:cursor-not-allowed hover:shadow-lg hover:shadow-accent/25 disabled:shadow-none flex items-center justify-center gap-2"
+              >
+                {isPublishing && <Spinner size="sm" />}
+                Publish
+              </button>
+            </>
           )}
         </div>
       </div>

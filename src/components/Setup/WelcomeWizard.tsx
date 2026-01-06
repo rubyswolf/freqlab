@@ -14,8 +14,8 @@ function WaveformIcon() {
             stroke="url(#grad)" strokeWidth="3" strokeLinecap="round"/>
       <defs>
         <linearGradient id="grad" x1="0" y1="0" x2="80" y2="80" gradientUnits="userSpaceOnUse">
-          <stop stopColor="#8b5cf6"/>
-          <stop offset="1" stopColor="#a78bfa"/>
+          <stop stopColor="#2DA86E"/>
+          <stop offset="1" stopColor="#36C07E"/>
         </linearGradient>
       </defs>
     </svg>

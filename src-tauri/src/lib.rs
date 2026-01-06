@@ -38,11 +38,15 @@ pub fn run() {
             commands::chat::get_current_version,
             commands::publish::publish_to_daw,
             commands::publish::check_available_formats,
+            commands::publish::package_plugins,
             commands::logging::get_log_file_path,
             commands::logging::read_log_file,
             commands::logging::clear_log_file,
             commands::logging::get_log_file_size,
             commands::files::store_chat_attachments,
+            commands::share::export_project,
+            commands::share::import_project,
+            commands::share::check_import_conflict,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

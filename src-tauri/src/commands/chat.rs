@@ -23,9 +23,9 @@ pub struct ChatMessage {
     #[serde(rename = "commitHash", skip_serializing_if = "Option::is_none")]
     pub commit_hash: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub version: Option<u32>,  // Version number for commits that changed files
+    pub version: Option<u32>, // Version number for commits that changed files
     #[serde(default)]
-    pub reverted: bool,  // Computed from activeVersion, kept for backwards compat
+    pub reverted: bool, // Computed from activeVersion, kept for backwards compat
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub attachments: Option<Vec<FileAttachment>>,
 }
@@ -36,7 +36,7 @@ pub struct ChatHistory {
     #[serde(rename = "lastUpdated")]
     pub last_updated: String,
     #[serde(rename = "activeVersion", skip_serializing_if = "Option::is_none", default)]
-    pub active_version: Option<u32>,  // Currently checked-out version
+    pub active_version: Option<u32>, // Currently checked-out version
 }
 
 /// Response when loading chat - includes activeVersion

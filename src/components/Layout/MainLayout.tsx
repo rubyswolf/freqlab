@@ -97,10 +97,6 @@ export function MainLayout() {
     }
   };
 
-  const handleOpenOutputFolder = async () => {
-    await invoke('open_output_folder');
-  };
-
   const handleDelete = async () => {
     if (!activeProject) return;
     try {
@@ -220,7 +216,7 @@ export function MainLayout() {
                       <h2 className="text-xl font-semibold text-text-primary">{activeProject.name}</h2>
                       <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
                         activeProject.template === 'instrument'
-                          ? 'bg-purple-500/15 text-purple-400'
+                          ? 'bg-amber-500/15 text-amber-400'
                           : 'bg-blue-500/15 text-blue-400'
                       }`}>
                         {activeProject.template === 'instrument' ? 'Instrument' : 'Effect'}

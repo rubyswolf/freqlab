@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import { SettingsModal } from '../Settings/SettingsModal';
+import { ShareImportModal } from '../Share';
+import { AboutModal } from '../About';
 
 interface HeaderProps {
   title?: string;
@@ -14,8 +16,8 @@ function WaveformLogo() {
             stroke="url(#headerGrad)" strokeWidth="4" strokeLinecap="round"/>
       <defs>
         <linearGradient id="headerGrad" x1="0" y1="0" x2="80" y2="80" gradientUnits="userSpaceOnUse">
-          <stop stopColor="#8b5cf6"/>
-          <stop offset="1" stopColor="#a78bfa"/>
+          <stop stopColor="#2DA86E"/>
+          <stop offset="1" stopColor="#36C07E"/>
         </linearGradient>
       </defs>
     </svg>
@@ -24,6 +26,8 @@ function WaveformLogo() {
 
 export function Header({ title = 'freqlab' }: HeaderProps) {
   const [showSettings, setShowSettings] = useState(false);
+  const [showShareImport, setShowShareImport] = useState(false);
+  const [showAbout, setShowAbout] = useState(false);
 
   return (
     <>
@@ -34,8 +38,15 @@ export function Header({ title = 'freqlab' }: HeaderProps) {
         </div>
         <div className="flex items-center gap-1">
           <button
+            onClick={() => setShowShareImport(true)}
+            className="px-3 py-1.5 rounded-lg text-sm text-text-muted hover:text-text-primary hover:bg-bg-tertiary transition-all duration-200"
+          >
+            Share & Import
+          </button>
+          <button
+            onClick={() => setShowAbout(true)}
             className="p-2 rounded-lg text-text-muted hover:text-text-primary hover:bg-bg-tertiary transition-all duration-200"
-            title="Help"
+            title="About"
           >
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M9.879 7.519c1.171-1.025 3.071-1.025 4.242 0 1.172 1.025 1.172 2.687 0 3.712-.203.179-.43.326-.67.442-.745.361-1.45.999-1.45 1.827v.75M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9 5.25h.008v.008H12v-.008z" />
@@ -55,6 +66,15 @@ export function Header({ title = 'freqlab' }: HeaderProps) {
       </header>
 
       <SettingsModal isOpen={showSettings} onClose={() => setShowSettings(false)} />
+      <ShareImportModal
+        isOpen={showShareImport}
+        onClose={() => setShowShareImport(false)}
+        onImportSuccess={() => {
+          // Could refresh project list or navigate, for now just close
+          setShowShareImport(false);
+        }}
+      />
+      <AboutModal isOpen={showAbout} onClose={() => setShowAbout(false)} />
     </>
   );
 }
