@@ -189,7 +189,7 @@ export function PublishModal({ isOpen, onClose, project, onSuccess }: PublishMod
         {/* Version indicator */}
         <div className="flex items-center gap-2">
           <span className="text-sm text-text-secondary">Publishing version:</span>
-          <span className="text-xs px-2 py-0.5 rounded-full bg-accent/20 text-accent font-medium">
+          <span className="text-xs px-2 py-0.5 rounded-full bg-violet-500/20 text-violet-400 font-medium">
             v{currentVersion}
           </span>
         </div>

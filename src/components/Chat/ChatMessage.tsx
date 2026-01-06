@@ -60,7 +60,7 @@ export function ChatMessage({ message, isInactive, isCurrentVersion, onVersionCl
               {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
             </span>
             {message.version && !isUser && (
-              <span className={`text-xs px-1.5 py-0.5 rounded ${isCurrentVersion ? 'bg-accent text-white' : 'bg-accent/20 text-accent'}`}>
+              <span className={`text-xs px-1.5 py-0.5 rounded ${isCurrentVersion ? 'bg-violet-500 text-white' : 'bg-violet-500/20 text-violet-400'}`}>
                 v{message.version}{isCurrentVersion ? ' (current)' : ''}
               </span>
             )}
