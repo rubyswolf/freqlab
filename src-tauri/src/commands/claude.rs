@@ -40,8 +40,6 @@ struct ClaudeJsonEvent {
     #[serde(default)]
     content: Option<String>,
     #[serde(default)]
-    result: Option<String>,
-    #[serde(default)]
     session_id: Option<String>,
 }
 
@@ -165,12 +163,9 @@ fn parse_claude_event(json_str: &str) -> Option<String> {
             Some("   ✓ Done".to_string())
         }
         "result" => {
-            // Final result
-            if let Some(result) = &event.result {
-                Some(format!("\n{}", result))
-            } else {
-                None
-            }
+            // Final result - skip this as it duplicates the assistant message content
+            // The "assistant" event already captures the response text
+            None
         }
         "error" => {
             if let Some(content) = &event.content {
