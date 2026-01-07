@@ -59,48 +59,45 @@ pub unsafe fn get_gui_size(plugin: *const ClapPlugin) -> Option<(u32, u32)> {
 }
 
 // =============================================================================
-// macOS implementation using Cocoa crate
+// macOS implementation using objc2 crates
 // =============================================================================
 
 #[cfg(target_os = "macos")]
 mod macos {
     use super::*;
-    use cocoa::appkit::{
-        NSApp, NSApplication, NSApplicationActivationPolicy, NSBackingStoreType, NSWindow,
+    use objc2::rc::Retained;
+    use objc2::{MainThreadMarker, MainThreadOnly};
+    use objc2_app_kit::{
+        NSApplication, NSApplicationActivationPolicy, NSBackingStoreType, NSColor, NSWindow,
         NSWindowStyleMask,
     };
-    use cocoa::base::{id, nil, NO, YES};
-    use cocoa::foundation::{NSAutoreleasePool, NSPoint, NSRect, NSSize, NSString};
-    use objc::{class, msg_send, sel, sel_impl};
+    use objc2_foundation::{NSPoint, NSRect, NSSize, NSThread};
 
     // FFI bindings for Grand Central Dispatch
     #[repr(C)]
-    struct dispatch_queue_s {
+    struct DispatchQueueS {
         _private: [u8; 0],
     }
-    type dispatch_queue_t = *mut dispatch_queue_s;
+    type DispatchQueueT = *mut DispatchQueueS;
 
     #[link(name = "System", kind = "dylib")]
     extern "C" {
-        static _dispatch_main_q: dispatch_queue_s;
+        static _dispatch_main_q: DispatchQueueS;
         fn dispatch_sync_f(
-            queue: dispatch_queue_t,
+            queue: DispatchQueueT,
             context: *mut std::ffi::c_void,
             work: extern "C" fn(*mut std::ffi::c_void),
         );
     }
 
     /// Get the main dispatch queue
-    fn main_queue() -> dispatch_queue_t {
-        unsafe { &_dispatch_main_q as *const _ as dispatch_queue_t }
+    fn main_queue() -> DispatchQueueT {
+        unsafe { &_dispatch_main_q as *const _ as DispatchQueueT }
     }
 
     /// Check if we're on the main thread
     pub fn is_main_thread() -> bool {
-        unsafe {
-            let result: bool = objc::msg_send![objc::class!(NSThread), isMainThread];
-            result
-        }
+        NSThread::isMainThread_class()
     }
 
     /// Create a native NSWindow for the plugin editor
@@ -132,14 +129,7 @@ mod macos {
 
         log::info!("create_editor_window_on_main: Running on main thread");
 
-        unsafe {
-            // Create an autorelease pool for this scope
-            let pool = NSAutoreleasePool::new(nil);
-
-            ctx.result = Some(create_editor_window_inner(ctx.plugin, &ctx.title, ctx.position));
-
-            let _: () = objc::msg_send![pool, drain];
-        }
+        ctx.result = Some(unsafe { create_editor_window_inner(ctx.plugin, &ctx.title, ctx.position) });
 
         log::info!(
             "create_editor_window_on_main: Complete (success={})",
@@ -167,10 +157,7 @@ mod macos {
         if on_main {
             // Already on main thread, run directly
             log::info!("create_editor_window_at: Already on main thread, running directly");
-            let pool = NSAutoreleasePool::new(nil);
-            let result = create_editor_window_inner(plugin, title, position);
-            let _: () = objc::msg_send![pool, drain];
-            result
+            create_editor_window_inner(plugin, title, position)
         } else {
             // Dispatch to main thread synchronously
             log::info!("create_editor_window_at: Dispatching to main thread via GCD");
@@ -192,7 +179,7 @@ mod macos {
         }
     }
 
-    /// Inner implementation of create_editor_window (called within autorelease pool)
+    /// Inner implementation of create_editor_window (called on main thread)
     unsafe fn create_editor_window_inner(
         plugin: *const ClapPlugin,
         title: &str,
@@ -228,7 +215,11 @@ mod macos {
         let (width, height) = get_gui_size(plugin).unwrap_or((800, 600));
         log::info!("create_editor_window_inner: Size = {}x{}", width, height);
 
-        log::info!("create_editor_window_inner: Creating NSWindow using cocoa crate");
+        log::info!("create_editor_window_inner: Creating NSWindow using objc2");
+
+        // Get MainThreadMarker - we know we're on main thread here
+        let mtm = MainThreadMarker::new()
+            .ok_or_else(|| "Not on main thread".to_string())?;
 
         // Create window frame
         let frame = NSRect::new(
@@ -237,82 +228,62 @@ mod macos {
         );
 
         // Window style mask: titled | closable | miniaturizable
-        let style = NSWindowStyleMask::NSTitledWindowMask
-            | NSWindowStyleMask::NSClosableWindowMask
-            | NSWindowStyleMask::NSMiniaturizableWindowMask;
+        let style = NSWindowStyleMask::Titled
+            | NSWindowStyleMask::Closable
+            | NSWindowStyleMask::Miniaturizable;
 
         // Create the window
-        let window: id = NSWindow::alloc(nil).initWithContentRect_styleMask_backing_defer_(
+        let window = NSWindow::initWithContentRect_styleMask_backing_defer(
+            NSWindow::alloc(mtm),
             frame,
             style,
-            NSBackingStoreType::NSBackingStoreBuffered,
-            NO,
+            NSBackingStoreType::Buffered,
+            false,
         );
 
-        if window == nil {
-            log::error!("create_editor_window_inner: NSWindow creation returned nil");
-            if let Some(destroy) = (*gui).destroy {
-                destroy(plugin);
-            }
-            return Err("Failed to create NSWindow".to_string());
-        }
         log::info!("create_editor_window_inner: NSWindow created successfully");
 
         // CRITICAL: When creating NSWindow programmatically (not via a window controller),
         // we must set releasedWhenClosed to NO to prevent automatic deallocation
-        window.setReleasedWhenClosed_(NO);
-        log::info!("create_editor_window_inner: setReleasedWhenClosed set to NO");
+        window.setReleasedWhenClosed(false);
+        log::info!("create_editor_window_inner: setReleasedWhenClosed set to false");
 
         // Get content view
         log::info!("create_editor_window_inner: Getting content view");
-        let content_view: id = window.contentView();
-        if content_view == nil {
-            log::error!("create_editor_window_inner: contentView is nil");
-            let _: () = objc::msg_send![window, release];
-            if let Some(destroy) = (*gui).destroy {
-                destroy(plugin);
-            }
-            return Err("Failed to get content view".to_string());
-        }
+        let content_view = window.contentView()
+            .ok_or_else(|| "Failed to get content view".to_string())?;
+
+        let content_view_ptr = Retained::as_ptr(&content_view) as *mut c_void;
         log::info!(
             "create_editor_window_inner: Content view obtained: {:p}",
-            content_view
+            content_view_ptr
         );
 
         // Set the window to be opaque
-        window.setOpaque_(YES);
+        window.setOpaque(true);
         log::info!("create_editor_window_inner: Window set to opaque");
 
         // Set a background color on the window to verify it's visible
-        // NSColor.windowBackgroundColor
-        let ns_color: id = objc::msg_send![objc::class!(NSColor), windowBackgroundColor];
-        if ns_color != nil {
-            window.setBackgroundColor_(ns_color);
-            log::info!("create_editor_window_inner: Background color set");
-        } else {
-            log::warn!("create_editor_window_inner: Failed to get windowBackgroundColor");
-        }
+        let ns_color = NSColor::windowBackgroundColor();
+        window.setBackgroundColor(Some(&ns_color));
+        log::info!("create_editor_window_inner: Background color set");
 
         // Set window title
         log::info!("create_editor_window_inner: Setting window title: {}", title);
-        let ns_title = NSString::alloc(nil).init_str(title);
-        window.setTitle_(ns_title);
-        // Release the NSString since setTitle_ copies it internally
-        let _: () = objc::msg_send![ns_title, release];
+        let ns_title = objc2_foundation::NSString::from_str(title);
+        window.setTitle(&ns_title);
         log::info!("create_editor_window_inner: Window title set");
 
         // Pass the content view to the plugin
         log::info!("create_editor_window_inner: Calling set_parent");
-        let clap_window = ClapWindow::cocoa(content_view as *mut c_void);
+        let clap_window = ClapWindow::cocoa(content_view_ptr);
         let set_parent = (*gui)
             .set_parent
             .ok_or_else(|| "Plugin GUI set_parent not available".to_string())?;
 
         if !set_parent(plugin, &clap_window) {
             log::error!("create_editor_window_inner: set_parent failed");
-            // Close window before releasing (even though it was never shown)
             window.close();
-            let _: () = objc::msg_send![window, release];
             // Destroy the plugin GUI since create() succeeded
             if let Some(destroy) = (*gui).destroy {
                 destroy(plugin);
@@ -331,27 +302,23 @@ mod macos {
         log::info!("create_editor_window_inner: Making window visible");
 
         // Get the shared NSApplication instance and activate it
-        let app = NSApp();
-        if app == nil {
-            log::error!("create_editor_window_inner: NSApp() returned nil");
-            // Continue anyway - window may still be visible
-        } else {
-            log::info!("create_editor_window_inner: Got NSApplication");
+        let app = NSApplication::sharedApplication(mtm);
+        log::info!("create_editor_window_inner: Got NSApplication");
 
-            // Set activation policy to Regular (required for unbundled apps)
-            app.setActivationPolicy_(NSApplicationActivationPolicy::NSApplicationActivationPolicyRegular);
-            log::info!("create_editor_window_inner: Set activation policy to Regular");
+        // Set activation policy to Regular (required for unbundled apps)
+        app.setActivationPolicy(NSApplicationActivationPolicy::Regular);
+        log::info!("create_editor_window_inner: Set activation policy to Regular");
 
-            // Activate the application (bring to foreground)
-            app.activateIgnoringOtherApps_(YES);
-            log::info!("create_editor_window_inner: Activated app");
-        }
+        // Activate the application (bring to foreground)
+        #[allow(deprecated)]
+        app.activateIgnoringOtherApps(true);
+        log::info!("create_editor_window_inner: Activated app");
 
         // Position the window
         if let Some((x, y)) = position {
             // Set specific position
             let origin = NSPoint::new(x, y);
-            window.setFrameOrigin_(origin);
+            window.setFrameOrigin(origin);
             log::info!("create_editor_window_inner: Window positioned at ({}, {})", x, y);
         } else {
             // Center the window on screen
@@ -360,27 +327,30 @@ mod macos {
         }
 
         // Make the window visible and bring to front
-        window.makeKeyAndOrderFront_(nil);
+        window.makeKeyAndOrderFront(None);
         log::info!("create_editor_window_inner: makeKeyAndOrderFront called");
 
         // Set window level to floating to ensure it appears above other windows
         // NSFloatingWindowLevel = 3
-        let _: () = objc::msg_send![window, setLevel: 3i64];
+        window.setLevel(3);
         log::info!("create_editor_window_inner: Set window level to floating");
 
         // Force display update
-        let _: () = objc::msg_send![window, display];
+        window.display();
         log::info!("create_editor_window_inner: display called");
 
         // Also try orderFrontRegardless which ignores app activation state
-        let _: () = objc::msg_send![window, orderFrontRegardless];
+        window.orderFrontRegardless();
         log::info!("create_editor_window_inner: orderFrontRegardless called");
 
-        // Note: Window already has retain count of 1 from alloc/init, which we own.
-        // Do NOT add extra retain here - destroy_editor_window will release once.
+        // Get window pointer - we need to keep it alive, so use into_raw
+        // Note: We're manually managing the window's lifetime, so we use Retained::into_raw
+        // to transfer ownership to the caller. The caller must call Retained::from_raw
+        // when done to properly release it.
+        let window_ptr = Retained::into_raw(window) as *mut c_void;
 
         log::info!("create_editor_window_inner: Window creation complete");
-        Ok((window as *mut c_void, content_view as *mut c_void))
+        Ok((window_ptr, content_view_ptr))
     }
 
     /// Context for destroy window dispatch
@@ -432,9 +402,6 @@ mod macos {
     unsafe fn destroy_editor_window_inner(plugin: *const ClapPlugin, window: *mut c_void) {
         log::info!("destroy_editor_window_inner: Starting teardown");
 
-        // Create an autorelease pool for this scope
-        let pool = NSAutoreleasePool::new(nil);
-
         // Properly teardown the plugin GUI:
         // 1. Hide the GUI
         // 2. Unparent the GUI (set_parent with null) - required by CLAP spec before destroy
@@ -460,10 +427,13 @@ mod macos {
 
         // Close and release the window
         if !window.is_null() {
-            let window: id = window as id;
+            // Reconstruct the Retained<NSWindow> from the raw pointer
+            // This will properly release the window when dropped
+            let window: Retained<NSWindow> = Retained::from_raw(window as *mut NSWindow)
+                .expect("Invalid window pointer");
 
             // Check if window is still valid and visible before closing
-            let is_visible: bool = objc::msg_send![window, isVisible];
+            let is_visible = window.isVisible();
             log::info!("destroy_editor_window_inner: Window visible: {}", is_visible);
 
             if is_visible {
@@ -471,15 +441,12 @@ mod macos {
                 log::info!("destroy_editor_window_inner: Window closed");
             }
 
-            // Release our ownership (balances the alloc/init from create)
-            let _: () = objc::msg_send![window, release];
+            // Window will be released when `window` goes out of scope (Retained drop)
             log::info!("destroy_editor_window_inner: Window released");
         } else {
             log::warn!("destroy_editor_window_inner: Window pointer was null");
         }
 
-        // Drain the autorelease pool
-        let _: () = objc::msg_send![pool, drain];
         log::info!("destroy_editor_window_inner: Complete");
     }
 
@@ -490,8 +457,9 @@ mod macos {
             return None;
         }
 
-        let window: id = window as id;
-        let frame: NSRect = msg_send![window, frame];
+        // Borrow the window without taking ownership
+        let window_ref = &*(window as *const NSWindow);
+        let frame = window_ref.frame();
         Some((frame.origin.x, frame.origin.y))
     }
 }

@@ -7,13 +7,11 @@ use super::clap_sys::*;
 use super::editor;
 use libloading::{Library, Symbol};
 use std::ffi::{CStr, CString};
-use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
+use std::process::Child;
 use std::ptr;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
-use std::thread;
 
 /// Global flag for callback requests from plugins
 /// When a plugin calls request_callback(), this is set to true
@@ -26,9 +24,7 @@ pub fn take_callback_request() -> bool {
 }
 
 #[cfg(target_os = "macos")]
-use cocoa::base::id;
-#[cfg(target_os = "macos")]
-use objc::{msg_send, sel, sel_impl};
+use objc2_app_kit::NSWindow;
 
 /// Host name and version info
 const HOST_NAME: &str = "freqlab";
@@ -42,12 +38,12 @@ pub struct PluginInstance {
     _library: Library,
     /// Plugin entry point
     entry: *const ClapPluginEntry,
-    /// Plugin factory
-    factory: *const ClapPluginFactory,
+    /// Plugin factory (kept alive, not directly read)
+    _factory: *const ClapPluginFactory,
     /// Plugin instance
     plugin: *const ClapPlugin,
     /// Host structure (must be kept alive for callbacks)
-    host: Box<ClapHost_>,
+    _host: Box<ClapHost_>,
     /// Host name CString (must be kept alive)
     _host_name: CString,
     /// Host vendor CString (must be kept alive)
@@ -75,21 +71,21 @@ pub struct PluginInstance {
     input_data: Vec<Vec<f32>>,
     output_data: Vec<Vec<f32>>,
 
-    // Plugin path (needed for editor host)
-    plugin_path: PathBuf,
+    // Plugin path (kept for potential editor host use)
+    _plugin_path: PathBuf,
 
     // Temp bundle path (if we copied to avoid dylib caching)
     temp_bundle_path: Option<PathBuf>,
 
-    // Editor process state (out-of-process hosting)
-    editor_process: Option<Arc<Mutex<Child>>>,
+    // Editor process state (out-of-process hosting, kept alive)
+    _editor_process: Option<Arc<Mutex<Child>>>,
     editor_open: bool,
     // Last known editor window position (x, y) for restoring on reload
     last_editor_position: Option<(f64, f64)>,
     // Channel for receiving state updates from editor process
     state_receiver: Option<std::sync::mpsc::Receiver<Vec<u8>>>,
-    // Shared position updated by the reader thread
-    editor_position_shared: Option<Arc<Mutex<Option<(f64, f64)>>>>,
+    // Shared position updated by the reader thread (kept alive)
+    _editor_position_shared: Option<Arc<Mutex<Option<(f64, f64)>>>>,
     // Counter for how many states have been applied (for debugging)
     state_apply_count: AtomicU32,
 
@@ -360,9 +356,9 @@ impl PluginInstance {
         let mut host_instance = Self {
             _library: library,
             entry,
-            factory,
+            _factory: factory,
             plugin,
-            host,
+            _host: host,
             _host_name: host_name,
             _host_vendor: host_vendor,
             _host_url: host_url,
@@ -379,13 +375,13 @@ impl PluginInstance {
             output_buffer_ptrs: Vec::new(),
             input_data,
             output_data,
-            plugin_path: bundle_path.to_path_buf(),
+            _plugin_path: bundle_path.to_path_buf(),
             temp_bundle_path,
-            editor_process: None,
+            _editor_process: None,
             editor_open: false,
             last_editor_position: None,
             state_receiver: None,
-            editor_position_shared: None,
+            _editor_position_shared: None,
             state_apply_count: AtomicU32::new(0),
             #[cfg(target_os = "macos")]
             editor_window: None,
@@ -1089,9 +1085,9 @@ impl PluginInstance {
     pub fn is_editor_window_visible(&self) -> bool {
         if let Some(window) = self.editor_window {
             unsafe {
-                let window: id = window as id;
-                let is_visible: bool = msg_send![window, isVisible];
-                is_visible
+                // Borrow the window without taking ownership
+                let window_ref = &*(window as *const NSWindow);
+                window_ref.isVisible()
             }
         } else {
             false
@@ -1234,86 +1230,3 @@ unsafe extern "C" fn host_request_callback(_host: *const ClapHost_) {
     CALLBACK_REQUESTED.store(true, Ordering::SeqCst);
 }
 
-// =============================================================================
-// Editor Host Binary Location
-// =============================================================================
-
-/// Find the freqlab-editor-host binary
-fn find_editor_host_binary() -> Result<PathBuf, String> {
-    // Binary name
-    #[cfg(target_os = "windows")]
-    const EDITOR_HOST_NAME: &str = "freqlab-editor-host.exe";
-    #[cfg(not(target_os = "windows"))]
-    const EDITOR_HOST_NAME: &str = "freqlab-editor-host";
-
-    // 1. Check next to the current executable
-    if let Ok(current_exe) = std::env::current_exe() {
-        if let Some(exe_dir) = current_exe.parent() {
-            let candidate = exe_dir.join(EDITOR_HOST_NAME);
-            if candidate.exists() {
-                log::info!("Found editor host next to executable: {:?}", candidate);
-                return Ok(candidate);
-            }
-
-            // On macOS, also check in MacOS folder of app bundle
-            #[cfg(target_os = "macos")]
-            {
-                // If we're in Contents/MacOS, editor host should be there too
-                let candidate = exe_dir.join(EDITOR_HOST_NAME);
-                if candidate.exists() {
-                    log::info!("Found editor host in app bundle: {:?}", candidate);
-                    return Ok(candidate);
-                }
-            }
-        }
-    }
-
-    // 2. Check in development target directory
-    // This handles `cargo run` during development
-    if let Ok(manifest_dir) = std::env::var("CARGO_MANIFEST_DIR") {
-        let target_dir = PathBuf::from(&manifest_dir)
-            .parent()
-            .map(|p| p.join("target"))
-            .unwrap_or_else(|| PathBuf::from("target"));
-
-        // Try debug first, then release
-        for profile in &["debug", "release"] {
-            let candidate = target_dir.join(profile).join(EDITOR_HOST_NAME);
-            if candidate.exists() {
-                log::info!("Found editor host in target/{}: {:?}", profile, candidate);
-                return Ok(candidate);
-            }
-        }
-    }
-
-    // 3. Try relative to CWD (for development)
-    let cwd_candidates = [
-        PathBuf::from("target/debug").join(EDITOR_HOST_NAME),
-        PathBuf::from("target/release").join(EDITOR_HOST_NAME),
-        PathBuf::from("../target/debug").join(EDITOR_HOST_NAME),
-        PathBuf::from("../target/release").join(EDITOR_HOST_NAME),
-    ];
-
-    for candidate in &cwd_candidates {
-        if candidate.exists() {
-            log::info!("Found editor host relative to CWD: {:?}", candidate);
-            return Ok(candidate.clone());
-        }
-    }
-
-    // 4. Check PATH
-    if let Ok(path_var) = std::env::var("PATH") {
-        for path_dir in std::env::split_paths(&path_var) {
-            let candidate = path_dir.join(EDITOR_HOST_NAME);
-            if candidate.exists() {
-                log::info!("Found editor host in PATH: {:?}", candidate);
-                return Ok(candidate);
-            }
-        }
-    }
-
-    Err(format!(
-        "Could not find {}. Make sure it's built with `cargo build --bin freqlab-editor-host`",
-        EDITOR_HOST_NAME
-    ))
-}
