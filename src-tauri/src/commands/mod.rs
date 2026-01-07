@@ -1,6 +1,7 @@
 pub mod prerequisites;
 pub mod projects;
 pub mod claude;
+pub mod claude_md;
 pub mod build;
 pub mod git;
 pub mod chat;

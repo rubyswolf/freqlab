@@ -200,10 +200,20 @@ fn get_component_description(component_id: &str) -> &'static str {
 const NIH_PLUG_REFERENCE: &str = include_str!("../../resources/nih-plug-reference.md");
 
 /// Build the system context for Claude when working on a plugin project
-fn build_context(project_name: &str, description: &str, components: Option<&Vec<String>>, is_first_message: bool) -> String {
+fn build_context(
+    project_name: &str,
+    description: &str,
+    project_path: &str,
+    components: Option<&Vec<String>>,
+    is_first_message: bool,
+) -> String {
     // Get path to local nih-plug repo for documentation
     let nih_plug_docs_path = super::projects::get_nih_plug_docs_path();
     let docs_path_str = nih_plug_docs_path.to_string_lossy();
+
+    // Read project-specific CLAUDE.md if it exists
+    let claude_md_path = PathBuf::from(project_path).join("CLAUDE.md");
+    let claude_md_content = fs::read_to_string(&claude_md_path).unwrap_or_default();
 
     let mut context = format!(
         r#"You are helping develop a VST audio plugin using nih-plug (Rust).
@@ -258,6 +268,12 @@ The user will describe what they want. Make the changes directly to the code."#,
         }
     }
 
+    // Append project-specific CLAUDE.md guidelines if present
+    if !claude_md_content.is_empty() {
+        context.push_str("\n\n--- PROJECT-SPECIFIC GUIDELINES (from CLAUDE.md) ---\n\n");
+        context.push_str(&claude_md_content);
+    }
+
     context
 }
 
@@ -300,8 +316,8 @@ pub async fn send_to_claude(
     let metadata = load_project_metadata(&project_path);
     let components = metadata.as_ref().and_then(|m| m.components.as_ref());
 
-    // Build context with components info for first message
-    let context = build_context(&project_name, &description, components, is_first_message);
+    // Build context with components info and project-specific CLAUDE.md
+    let context = build_context(&project_name, &description, &project_path, components, is_first_message);
 
     // Build args - include --resume if we have an existing session
     let mut args = vec![
