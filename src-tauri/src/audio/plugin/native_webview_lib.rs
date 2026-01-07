@@ -24,6 +24,8 @@ use parking_lot::Mutex;
 #[cfg(target_os = "macos")]
 use cocoa::foundation::{NSRect, NSPoint, NSSize};
 #[cfg(target_os = "macos")]
+use cocoa::base::id;
+#[cfg(target_os = "macos")]
 use raw_window_handle::HasRawWindowHandle;
 
 pub use baseview::{DropData, DropEffect, EventStatus, MouseEvent};
@@ -32,6 +34,44 @@ pub use keyboard_types::*;
 type EventLoopHandler = dyn Fn(&WindowHandler, ParamSetter, &mut Window) + Send + Sync;
 type KeyboardHandler = dyn Fn(KeyboardEvent) -> bool + Send + Sync;
 type MouseHandler = dyn Fn(MouseEvent) -> EventStatus + Send + Sync;
+
+// =============================================================================
+// Grand Central Dispatch (GCD) for main thread safety
+// WKWebView MUST be created on the main thread on macOS
+// =============================================================================
+
+#[cfg(target_os = "macos")]
+mod gcd {
+    use std::ffi::c_void;
+
+    #[repr(C)]
+    pub struct dispatch_queue_s {
+        _private: [u8; 0],
+    }
+    pub type dispatch_queue_t = *mut dispatch_queue_s;
+
+    #[link(name = "System", kind = "dylib")]
+    extern "C" {
+        pub static _dispatch_main_q: dispatch_queue_s;
+        pub fn dispatch_sync_f(
+            queue: dispatch_queue_t,
+            context: *mut c_void,
+            work: extern "C" fn(*mut c_void),
+        );
+    }
+
+    pub fn main_queue() -> dispatch_queue_t {
+        unsafe { &_dispatch_main_q as *const _ as dispatch_queue_t }
+    }
+
+    pub fn is_main_thread() -> bool {
+        use objc::{class, msg_send, sel, sel_impl};
+        unsafe {
+            let result: bool = msg_send![class!(NSThread), isMainThread];
+            result
+        }
+    }
+}
 
 pub struct WebViewEditor {
     source: Arc<HTMLSource>,
@@ -196,6 +236,51 @@ impl Drop for Instance {
 
 unsafe impl Send for Instance {}
 
+// =============================================================================
+// Main thread WebView creation helper
+// =============================================================================
+
+#[cfg(target_os = "macos")]
+struct WebViewCreationContext {
+    parent_view: id,
+    frame: NSRect,
+    events_sender: Sender<Value>,
+    developer_mode: bool,
+    source: Arc<HTMLSource>,
+    result: Option<Result<NativeWebView, String>>,
+}
+
+#[cfg(target_os = "macos")]
+extern "C" fn create_webview_on_main_thread(context: *mut std::ffi::c_void) {
+    unsafe {
+        let ctx = &mut *(context as *mut WebViewCreationContext);
+
+        let sender = ctx.events_sender.clone();
+        let webview_result = NativeWebView::new(ctx.parent_view, ctx.frame, move |msg: String| {
+            if let Ok(json_value) = serde_json::from_str(&msg) {
+                let _ = sender.send(json_value);
+            } else {
+                eprintln!("Invalid JSON from web view: {}.", msg);
+            }
+        });
+
+        match &webview_result {
+            Ok(webview) => {
+                if ctx.developer_mode {
+                    webview.set_developer_mode(true);
+                }
+                match ctx.source.as_ref() {
+                    HTMLSource::String(html_str) => webview.load_html(html_str),
+                    HTMLSource::URL(url) => webview.load_url(url),
+                }
+            }
+            Err(_) => {}
+        }
+
+        ctx.result = Some(webview_result);
+    }
+}
+
 impl Editor for WebViewEditor {
     fn spawn(
         &self,
@@ -227,7 +312,7 @@ impl Editor for WebViewEditor {
             let raw_handle = window.raw_window_handle();
             let parent_view = match raw_handle {
                 raw_window_handle::RawWindowHandle::AppKit(handle) => {
-                    handle.ns_view as cocoa::base::id
+                    handle.ns_view as id
                 }
                 _ => panic!("Unsupported window handle type"),
             };
@@ -240,27 +325,49 @@ impl Editor for WebViewEditor {
                 ),
             );
 
-            // Create webview with message handler
-            let sender = events_sender.clone();
-            let webview = NativeWebView::new(parent_view, frame, move |msg: String| {
-                if let Ok(json_value) = serde_json::from_str(&msg) {
-                    let _ = sender.send(json_value);
-                } else {
-                    eprintln!("Invalid JSON from web view: {}.", msg);
+            // Create webview - MUST happen on main thread!
+            let webview = if gcd::is_main_thread() {
+                // Already on main thread, create directly
+                let sender = events_sender.clone();
+                let wv = NativeWebView::new(parent_view, frame, move |msg: String| {
+                    if let Ok(json_value) = serde_json::from_str(&msg) {
+                        let _ = sender.send(json_value);
+                    } else {
+                        eprintln!("Invalid JSON from web view: {}.", msg);
+                    }
+                })
+                .expect("Failed to create native webview");
+
+                if developer_mode {
+                    wv.set_developer_mode(true);
                 }
-            })
-            .expect("Failed to create native webview");
+                match source.as_ref() {
+                    HTMLSource::String(html_str) => wv.load_html(html_str),
+                    HTMLSource::URL(url) => wv.load_url(url),
+                }
+                wv
+            } else {
+                // Not on main thread - dispatch synchronously to main thread
+                let mut ctx = WebViewCreationContext {
+                    parent_view,
+                    frame,
+                    events_sender: events_sender.clone(),
+                    developer_mode,
+                    source: source.clone(),
+                    result: None,
+                };
 
-            // Enable dev tools if requested
-            if developer_mode {
-                webview.set_developer_mode(true);
-            }
+                unsafe {
+                    gcd::dispatch_sync_f(
+                        gcd::main_queue(),
+                        &mut ctx as *mut _ as *mut std::ffi::c_void,
+                        create_webview_on_main_thread,
+                    );
+                }
 
-            // Load content
-            match source.as_ref() {
-                HTMLSource::String(html_str) => webview.load_html(html_str),
-                HTMLSource::URL(url) => webview.load_url(url),
-            }
+                ctx.result.expect("WebView creation context not set")
+                    .expect("Failed to create native webview on main thread")
+            };
 
             WindowHandler {
                 context,

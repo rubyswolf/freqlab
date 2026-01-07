@@ -4,9 +4,9 @@
 //! Uses Apple's WKWebView directly via objc/cocoa crates.
 
 use cocoa::base::{id, nil, NO, YES};
-use cocoa::foundation::{NSRect, NSPoint, NSSize, NSString};
+use cocoa::foundation::{NSRect, NSPoint, NSSize, NSString, NSAutoreleasePool};
 use objc::declare::ClassDecl;
-use objc::runtime::{Class, Object, Sel};
+use objc::runtime::{Class, Object, Protocol, Sel};
 use objc::{class, msg_send, sel, sel_impl};
 use std::sync::Once;
 
@@ -15,11 +15,13 @@ pub struct NativeWebView {
     webview: id,
     #[allow(dead_code)]
     message_handler: id,
+    /// Prevent the callback from being dropped while the webview is alive
+    #[allow(dead_code)]
+    callback_box: *mut MessageCallback,
 }
 
 // Message handler callback type
 type MessageCallback = Box<dyn Fn(String) + Send + Sync>;
-static mut MESSAGE_CALLBACK: Option<MessageCallback> = None;
 static REGISTER_CLASS: Once = Once::new();
 
 impl NativeWebView {
@@ -29,8 +31,22 @@ impl NativeWebView {
         F: Fn(String) + Send + Sync + 'static,
     {
         unsafe {
-            // Store callback globally (we'll improve this later with proper instance handling)
-            MESSAGE_CALLBACK = Some(Box::new(on_message));
+            // Use autorelease pool for proper ObjC memory management
+            let pool: id = NSAutoreleasePool::new(nil);
+            let result = Self::create_webview_inner(parent_view, frame, on_message);
+            let _: () = msg_send![pool, drain];
+            result
+        }
+    }
+
+    unsafe fn create_webview_inner<F>(parent_view: id, frame: NSRect, on_message: F) -> Result<Self, String>
+    where
+        F: Fn(String) + Send + Sync + 'static,
+    {
+            // Box the callback and leak it to get a raw pointer
+            // We'll store this pointer in the ObjC object's ivar
+            let callback: MessageCallback = Box::new(on_message);
+            let callback_box = Box::into_raw(Box::new(callback));
 
             // Register our custom message handler class (once)
             REGISTER_CLASS.call_once(|| {
@@ -44,8 +60,15 @@ impl NativeWebView {
             let user_content_controller: id = msg_send![config, userContentController];
 
             // Create our message handler instance
-            let handler_class = Class::get("FreqlabMessageHandler").unwrap();
+            let handler_class = Class::get(MESSAGE_HANDLER_CLASS)
+                .expect("Message handler class should be registered");
             let message_handler: id = msg_send![handler_class, new];
+
+            // Store the callback pointer in the handler's ivar
+            (*message_handler).set_ivar::<*mut std::ffi::c_void>(
+                CALLBACK_IVAR,
+                callback_box as *mut std::ffi::c_void,
+            );
 
             // Register handler for "ipc" messages
             let handler_name = NSString::alloc(nil).init_str("ipc");
@@ -84,6 +107,8 @@ impl NativeWebView {
             let webview: id = msg_send![webview, initWithFrame:frame configuration:config];
 
             if webview == nil {
+                // Clean up the callback if webview creation failed
+                let _ = Box::from_raw(callback_box);
                 return Err("Failed to create WKWebView".to_string());
             }
 
@@ -97,11 +122,15 @@ impl NativeWebView {
             let autoresizing_mask: u64 = 1 | 2 | 4 | 8 | 16 | 32; // NSViewWidthSizable | NSViewHeightSizable | all margins
             let _: () = msg_send![webview, setAutoresizingMask:autoresizing_mask];
 
+            // Retain webview and handler to ensure they stay alive
+            let _: () = msg_send![webview, retain];
+            let _: () = msg_send![message_handler, retain];
+
             Ok(NativeWebView {
                 webview,
                 message_handler,
+                callback_box,
             })
-        }
     }
 
     /// Load HTML string
@@ -169,6 +198,8 @@ impl NativeWebView {
 impl Drop for NativeWebView {
     fn drop(&mut self) {
         unsafe {
+            let pool: id = NSAutoreleasePool::new(nil);
+
             // Remove from superview
             let _: () = msg_send![self.webview, removeFromSuperview];
 
@@ -177,6 +208,17 @@ impl Drop for NativeWebView {
             let controller: id = msg_send![config, userContentController];
             let handler_name = NSString::alloc(nil).init_str("ipc");
             let _: () = msg_send![controller, removeScriptMessageHandlerForName:handler_name];
+
+            // Release retained objects
+            let _: () = msg_send![self.webview, release];
+            let _: () = msg_send![self.message_handler, release];
+
+            // Free the callback box
+            if !self.callback_box.is_null() {
+                let _ = Box::from_raw(self.callback_box);
+            }
+
+            let _: () = msg_send![pool, drain];
         }
     }
 }
@@ -184,14 +226,48 @@ impl Drop for NativeWebView {
 unsafe impl Send for NativeWebView {}
 unsafe impl Sync for NativeWebView {}
 
-/// Register the FreqlabMessageHandler Objective-C class
+/// Class name for the message handler - must be unique to avoid conflicts
+/// Using a UUID-style name to prevent clashes with other plugins or hosts
+const MESSAGE_HANDLER_CLASS: &str = "NihPlugWebViewMsgHandler_7f3a9b2c";
+
+/// Ivar name for storing the callback pointer
+const CALLBACK_IVAR: &str = "callbackPtr";
+
+/// Register the message handler Objective-C class
 fn register_message_handler_class() {
+    // Check if class already exists (might be registered by another instance)
+    if Class::get(MESSAGE_HANDLER_CLASS).is_some() {
+        return; // Already registered, nothing to do
+    }
+
     let superclass = class!(NSObject);
-    let mut decl = ClassDecl::new("FreqlabMessageHandler", superclass).unwrap();
+    let mut decl = match ClassDecl::new(MESSAGE_HANDLER_CLASS, superclass) {
+        Some(d) => d,
+        None => {
+            // Class registration failed (race condition - another thread registered it)
+            return;
+        }
+    };
+
+    // CRITICAL: Add protocol conformance to WKScriptMessageHandler
+    // Without this, WebKit may not recognize our class as a valid handler
+    if let Some(protocol) = Protocol::get("WKScriptMessageHandler") {
+        decl.add_protocol(protocol);
+    }
+
+    // Add ivar to store callback pointer (per-instance)
+    decl.add_ivar::<*mut std::ffi::c_void>(CALLBACK_IVAR);
 
     // Implement WKScriptMessageHandler protocol method
-    extern "C" fn did_receive_message(_this: &Object, _sel: Sel, _controller: id, message: id) {
+    extern "C" fn did_receive_message(this: &Object, _sel: Sel, _controller: id, message: id) {
         unsafe {
+            // Get the callback pointer from this instance's ivar
+            let callback_ptr: *mut std::ffi::c_void = *this.get_ivar(CALLBACK_IVAR);
+            if callback_ptr.is_null() {
+                return;
+            }
+            let callback = &*(callback_ptr as *const MessageCallback);
+
             // Get message body (should be a string)
             let body: id = msg_send![message, body];
 
@@ -202,10 +278,8 @@ fn register_message_handler_class() {
                     .to_string_lossy()
                     .to_string();
 
-                // Call the callback
-                if let Some(ref callback) = MESSAGE_CALLBACK {
-                    callback(rust_str);
-                }
+                // Call this instance's callback
+                callback(rust_str);
             }
         }
     }

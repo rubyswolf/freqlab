@@ -73,6 +73,28 @@ mod macos {
     use cocoa::foundation::{NSAutoreleasePool, NSPoint, NSRect, NSSize, NSString};
     use objc::{class, msg_send, sel, sel_impl};
 
+    // FFI bindings for Grand Central Dispatch
+    #[repr(C)]
+    struct dispatch_queue_s {
+        _private: [u8; 0],
+    }
+    type dispatch_queue_t = *mut dispatch_queue_s;
+
+    #[link(name = "System", kind = "dylib")]
+    extern "C" {
+        static _dispatch_main_q: dispatch_queue_s;
+        fn dispatch_sync_f(
+            queue: dispatch_queue_t,
+            context: *mut std::ffi::c_void,
+            work: extern "C" fn(*mut std::ffi::c_void),
+        );
+    }
+
+    /// Get the main dispatch queue
+    fn main_queue() -> dispatch_queue_t {
+        unsafe { &_dispatch_main_q as *const _ as dispatch_queue_t }
+    }
+
     /// Check if we're on the main thread
     pub fn is_main_thread() -> bool {
         unsafe {
@@ -93,15 +115,45 @@ mod macos {
         create_editor_window_at(plugin, title, None)
     }
 
+    /// Context for main thread dispatch
+    struct EditorWindowContext {
+        plugin: *const ClapPlugin,
+        title: String,
+        position: Option<(f64, f64)>,
+        result: Option<Result<(*mut c_void, *mut c_void), String>>,
+    }
+
+    // Required for passing context to dispatch
+    unsafe impl Send for EditorWindowContext {}
+
+    /// Worker function called on main thread
+    extern "C" fn create_editor_window_on_main(context: *mut std::ffi::c_void) {
+        let ctx = unsafe { &mut *(context as *mut EditorWindowContext) };
+
+        log::info!("create_editor_window_on_main: Running on main thread");
+
+        unsafe {
+            // Create an autorelease pool for this scope
+            let pool = NSAutoreleasePool::new(nil);
+
+            ctx.result = Some(create_editor_window_inner(ctx.plugin, &ctx.title, ctx.position));
+
+            let _: () = objc::msg_send![pool, drain];
+        }
+
+        log::info!(
+            "create_editor_window_on_main: Complete (success={})",
+            ctx.result.as_ref().map(|r| r.is_ok()).unwrap_or(false)
+        );
+    }
+
     /// Create a native NSWindow for the plugin editor at a specific position
     ///
     /// If position is None, the window will be centered on screen.
     /// Position is (x, y) in screen coordinates.
     ///
-    /// IMPORTANT: On macOS, window operations should be performed on the main thread.
-    /// This function will log a warning if called from a background thread.
-    /// For reliable GUI hosting, use the freqlab-editor-host binary which runs
-    /// its own event loop on the main thread.
+    /// This function automatically dispatches to the main thread if not already on it,
+    /// which is required for WebView-based plugins.
     pub unsafe fn create_editor_window_at(
         plugin: *const ClapPlugin,
         title: &str,
@@ -112,25 +164,32 @@ mod macos {
         let on_main = is_main_thread();
         log::info!("create_editor_window_at: on_main_thread = {}", on_main);
 
-        // Log a warning if not on main thread
-        if !on_main {
-            log::warn!("create_editor_window_at: Not on main thread - this may cause issues with some plugins");
+        if on_main {
+            // Already on main thread, run directly
+            log::info!("create_editor_window_at: Already on main thread, running directly");
+            let pool = NSAutoreleasePool::new(nil);
+            let result = create_editor_window_inner(plugin, title, position);
+            let _: () = objc::msg_send![pool, drain];
+            result
+        } else {
+            // Dispatch to main thread synchronously
+            log::info!("create_editor_window_at: Dispatching to main thread via GCD");
+
+            let mut ctx = EditorWindowContext {
+                plugin,
+                title: title.to_string(),
+                position,
+                result: None,
+            };
+
+            dispatch_sync_f(
+                main_queue(),
+                &mut ctx as *mut EditorWindowContext as *mut std::ffi::c_void,
+                create_editor_window_on_main,
+            );
+
+            ctx.result.unwrap_or_else(|| Err("Main thread dispatch failed".to_string()))
         }
-
-        // Create an autorelease pool for this scope
-        log::info!("create_editor_window_at: Creating autorelease pool");
-        let pool = NSAutoreleasePool::new(nil);
-
-        let result = create_editor_window_inner(plugin, title, position);
-
-        log::info!("create_editor_window_at: Draining autorelease pool");
-        let _: () = objc::msg_send![pool, drain];
-
-        log::info!(
-            "create_editor_window_at: Returning result (success={})",
-            result.is_ok()
-        );
-        result
     }
 
     /// Inner implementation of create_editor_window (called within autorelease pool)
@@ -324,22 +383,54 @@ mod macos {
         Ok((window as *mut c_void, content_view as *mut c_void))
     }
 
+    /// Context for destroy window dispatch
+    struct DestroyWindowContext {
+        plugin: *const ClapPlugin,
+        window: *mut c_void,
+    }
+
+    unsafe impl Send for DestroyWindowContext {}
+
+    /// Worker function for destroy on main thread
+    extern "C" fn destroy_editor_window_on_main(context: *mut std::ffi::c_void) {
+        let ctx = unsafe { &*(context as *const DestroyWindowContext) };
+        unsafe {
+            destroy_editor_window_inner(ctx.plugin, ctx.window);
+        }
+    }
+
     /// Close and destroy the editor window
     ///
     /// # Safety
-    /// - This function should be called from the main thread on macOS.
     /// - This function should only be called once per window. The caller is
     ///   responsible for tracking whether the window has been destroyed.
     /// - After calling this function, the window pointer is invalid and must
     ///   not be used again.
+    /// - This function automatically dispatches to the main thread if needed.
     pub unsafe fn destroy_editor_window(plugin: *const ClapPlugin, window: *mut c_void) {
         log::info!("destroy_editor_window: Called with window {:p}", window);
 
-        // Check main thread
         let on_main = is_main_thread();
-        if !on_main {
-            log::warn!("destroy_editor_window: Not on main thread - this may cause issues");
+        log::info!("destroy_editor_window: on_main_thread = {}", on_main);
+
+        if on_main {
+            destroy_editor_window_inner(plugin, window);
+        } else {
+            log::info!("destroy_editor_window: Dispatching to main thread via GCD");
+
+            let ctx = DestroyWindowContext { plugin, window };
+
+            dispatch_sync_f(
+                main_queue(),
+                &ctx as *const DestroyWindowContext as *mut std::ffi::c_void,
+                destroy_editor_window_on_main,
+            );
         }
+    }
+
+    /// Inner implementation of destroy_editor_window
+    unsafe fn destroy_editor_window_inner(plugin: *const ClapPlugin, window: *mut c_void) {
+        log::info!("destroy_editor_window_inner: Starting teardown");
 
         // Create an autorelease pool for this scope
         let pool = NSAutoreleasePool::new(nil);
@@ -349,19 +440,19 @@ mod macos {
         // 2. Unparent the GUI (set_parent with null) - required by CLAP spec before destroy
         // 3. Destroy the GUI
         if let Some(gui) = get_gui_extension(plugin) {
-            log::info!("destroy_editor_window: Hiding plugin GUI");
+            log::info!("destroy_editor_window_inner: Hiding plugin GUI");
             if let Some(hide) = (*gui).hide {
                 hide(plugin);
             }
 
             // Unparent the plugin GUI before destroying (CLAP spec requirement)
-            log::info!("destroy_editor_window: Unparenting plugin GUI");
+            log::info!("destroy_editor_window_inner: Unparenting plugin GUI");
             if let Some(set_parent) = (*gui).set_parent {
                 let null_window = ClapWindow::null();
                 let _ = set_parent(plugin, &null_window);
             }
 
-            log::info!("destroy_editor_window: Destroying plugin GUI");
+            log::info!("destroy_editor_window_inner: Destroying plugin GUI");
             if let Some(destroy) = (*gui).destroy {
                 destroy(plugin);
             }
@@ -373,23 +464,23 @@ mod macos {
 
             // Check if window is still valid and visible before closing
             let is_visible: bool = objc::msg_send![window, isVisible];
-            log::info!("destroy_editor_window: Window visible: {}", is_visible);
+            log::info!("destroy_editor_window_inner: Window visible: {}", is_visible);
 
             if is_visible {
                 window.close();
-                log::info!("destroy_editor_window: Window closed");
+                log::info!("destroy_editor_window_inner: Window closed");
             }
 
             // Release our ownership (balances the alloc/init from create)
             let _: () = objc::msg_send![window, release];
-            log::info!("destroy_editor_window: Window released");
+            log::info!("destroy_editor_window_inner: Window released");
         } else {
-            log::warn!("destroy_editor_window: Window pointer was null");
+            log::warn!("destroy_editor_window_inner: Window pointer was null");
         }
 
         // Drain the autorelease pool
         let _: () = objc::msg_send![pool, drain];
-        log::info!("destroy_editor_window: Complete");
+        log::info!("destroy_editor_window_inner: Complete");
     }
 
     /// Get the current position of an editor window
