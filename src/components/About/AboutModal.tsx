@@ -125,7 +125,7 @@ export function AboutModal({ isOpen, onClose }: AboutModalProps) {
             onClick={() => setNihPlugLicenseOpen(!nihPlugLicenseOpen)}
             className="w-full flex items-center justify-between p-3 bg-bg-tertiary hover:bg-bg-elevated rounded-lg transition-colors text-left"
           >
-            <span className="text-sm text-text-primary font-medium">nih-plug License (GPL-3.0)</span>
+            <span className="text-sm text-text-primary font-medium">nih-plug & Plugin Licensing</span>
             <svg
               className={`w-4 h-4 text-text-muted transition-transform ${nihPlugLicenseOpen ? 'rotate-180' : ''}`}
               fill="none"
@@ -137,16 +137,22 @@ export function AboutModal({ isOpen, onClose }: AboutModalProps) {
             </svg>
           </button>
           {nihPlugLicenseOpen && (
-            <div className="p-4 bg-bg-tertiary rounded-lg text-left">
-              <p className="text-sm text-text-secondary mb-3">
-                nih-plug is licensed under the GNU General Public License v3.0 (GPL-3.0).
-                This means plugins created with nih-plug must also be distributed under GPL-3.0 or a compatible license.
+            <div className="p-4 bg-bg-tertiary rounded-lg text-left space-y-2">
+              <p className="text-sm text-text-secondary">
+                The <span className="text-text-primary">nih-plug framework</span> is licensed under the permissive <span className="text-text-primary">ISC license</span>.
+              </p>
+              <p className="text-sm text-text-secondary">
+                However, the <span className="text-text-primary">VST3 bindings</span> are licensed under <span className="text-text-primary">GPL-3.0</span>.
+                This means any VST3 plugins built with nih-plug must comply with GPL-3.0 terms.
+              </p>
+              <p className="text-sm text-text-muted text-xs">
+                CLAP-only plugins are not subject to this requirement.
               </p>
               <a
                 href="https://github.com/robbert-vdh/nih-plug/"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-sm text-accent hover:text-accent-hover transition-colors"
+                className="inline-block mt-2 text-sm text-accent hover:text-accent-hover transition-colors"
               >
                 View nih-plug on GitHub →
               </a>
@@ -183,7 +189,7 @@ export function AboutModal({ isOpen, onClose }: AboutModalProps) {
               <div>
                 <h4 className="text-xs font-semibold text-text-primary uppercase tracking-wide mb-0.5">Plugin Output</h4>
                 <p className="text-xs text-text-secondary">
-                  Plugins use nih-plug and must be GPL-3.0. You may sell plugins but must provide source on request.
+                  VST3 plugins must be GPL-3.0 due to VST3 binding licensing. You may sell plugins but must provide source on request.
                 </p>
               </div>
               <div>

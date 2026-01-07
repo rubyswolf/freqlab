@@ -334,7 +334,7 @@ npm run lint
 
 | Framework | Guide | Platform |
 |-----------|-------|----------|
-| **WebView (Advanced UI)** | `.docs/nih-plug-webview-guide.md` | macOS only |
+| **WebView (Advanced UI)** | `.docs/nih-plug-webview-guide.md` | All platforms |
 | **egui (Standard UI)** | `.docs/nih-plug-egui-guide.md` | All platforms |
 | **Headless** | No UI, DAW controls only | All platforms |
 
@@ -351,7 +351,7 @@ fn safety_limit(sample: f32) -> f32 {
 *sample = safety_limit(*sample);
 ```
 
-### WebView Plugin Pattern (macOS only)
+### WebView Plugin Pattern
 
 ```rust
 use nih_plug_webview::{WebViewEditor, HTMLSource, EventStatus};

@@ -787,7 +787,7 @@ nih_export_vst3!({pascal_name});
     )
 }
 
-/// Generate an effect plugin template with WebView UI (macOS only)
+/// Generate an effect plugin template with WebView UI
 fn generate_effect_webview_template(
     pascal_name: &str,
     snake_name: &str,
@@ -1130,7 +1130,7 @@ nih_export_vst3!({pascal_name});
     )
 }
 
-/// Generate an instrument plugin template with WebView UI (macOS only)
+/// Generate an instrument plugin template with WebView UI
 fn generate_instrument_webview_template(
     pascal_name: &str,
     snake_name: &str,
