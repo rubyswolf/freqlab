@@ -97,7 +97,7 @@ pub fn ensure_workspace() -> Result<(), String> {
     // Create or update workspace root Cargo.toml
     let workspace_cargo = workspace.join("Cargo.toml");
     let cargo_content = r#"[workspace]
-members = ["projects/*", "xtask", ".nih-plug-webview"]
+members = ["projects/*", "xtask"]
 resolver = "2"
 "#;
     fs::write(&workspace_cargo, cargo_content)
@@ -145,64 +145,6 @@ xtask = "run --package xtask --release --"
 
     // Clone nih-plug repo for local documentation (non-blocking on failure)
     let _ = ensure_nih_plug_docs();
-
-    // Set up native nih-plug-webview for macOS (avoids Tauri/wry conflicts)
-    let _ = ensure_native_webview_lib(&workspace);
-
-    Ok(())
-}
-
-/// Set up the native nih-plug-webview library in the workspace
-/// This is our fork that uses native WKWebView instead of wry to avoid conflicts with Tauri
-fn ensure_native_webview_lib(workspace: &std::path::Path) -> Result<(), String> {
-    let webview_dir = workspace.join(".nih-plug-webview");
-    let src_dir = webview_dir.join("src");
-
-    // Create directory structure
-    fs::create_dir_all(&src_dir)
-        .map_err(|e| format!("Failed to create nih-plug-webview dir: {}", e))?;
-
-    // Write Cargo.toml
-    let cargo_toml = webview_dir.join("Cargo.toml");
-    if !cargo_toml.exists() {
-        let content = r#"[package]
-name = "nih_plug_webview"
-version = "0.1.0"
-edition = "2021"
-description = "Native WKWebView for nih-plug (macOS only, avoids Tauri/wry conflicts)"
-
-[dependencies]
-nih_plug = { git = "https://github.com/robbert-vdh/nih-plug.git", branch = "master" }
-parking_lot = "0.12"
-serde_json = "1.0"
-baseview = { git = "https://github.com/RustAudio/baseview" }
-raw-window-handle = "0.5"
-crossbeam = "0.8"
-keyboard-types = "0.6"
-
-[target.'cfg(target_os = "macos")'.dependencies]
-cocoa = "0.26"
-objc = "0.2"
-"#;
-        fs::write(&cargo_toml, content)
-            .map_err(|e| format!("Failed to write webview Cargo.toml: {}", e))?;
-    }
-
-    // Write lib.rs
-    let lib_rs = src_dir.join("lib.rs");
-    if !lib_rs.exists() {
-        let content = include_str!("../audio/plugin/native_webview_lib.rs");
-        fs::write(&lib_rs, content)
-            .map_err(|e| format!("Failed to write webview lib.rs: {}", e))?;
-    }
-
-    // Write native_webview.rs
-    let native_webview_rs = src_dir.join("native_webview.rs");
-    if !native_webview_rs.exists() {
-        let content = include_str!("../audio/plugin/native_webview.rs");
-        fs::write(&native_webview_rs, content)
-            .map_err(|e| format!("Failed to write native_webview.rs: {}", e))?;
-    }
 
     Ok(())
 }
@@ -280,10 +222,9 @@ pub async fn create_project(input: CreateProjectInput) -> Result<ProjectMeta, St
     let vst3_id = generate_vst3_id(&input.name);
 
     // Generate dependencies based on UI framework
-    // Note: webview uses our native WKWebView fork (macOS only) to avoid Tauri conflicts
     let ui_deps = match input.ui_framework.as_str() {
-        "webview" => r#"# Native WKWebView (macOS only) - avoids conflicts with Tauri
-nih_plug_webview = { path = "../../.nih-plug-webview" }
+        "webview" => r#"# Forked nih-plug-webview with Tauri compatibility and hot reload support
+nih_plug_webview = { git = "https://github.com/jamesontucker/nih-plug-webview" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0""#,
         "egui" => r#"nih_plug_egui = { git = "https://github.com/robbert-vdh/nih-plug.git", branch = "master" }

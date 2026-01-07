@@ -61,10 +61,17 @@ pub async fn build_project(
     // Convert project name to Cargo package name (hyphens -> underscores)
     let package_name = to_package_name(&project_name);
 
+    // Generate unique build suffix for wry class names (enables webview plugin hot reload)
+    let build_suffix = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| format!("{}", d.as_millis() % 100_000_000))
+        .unwrap_or_else(|_| "0".to_string());
+
     // Run cargo xtask bundle from workspace root
     let mut child = Command::new("cargo")
         .current_dir(&workspace_path)
         .args(["xtask", "bundle", &package_name, "--release"])
+        .env("WRY_BUILD_SUFFIX", &build_suffix)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
