@@ -154,7 +154,7 @@ export function WelcomeWizard() {
 
         {/* Subtle branding */}
         <p className="text-center text-text-muted text-xs mt-6">
-          Powered by nih-plug
+          A nanoshrine experiment
         </p>
       </div>
     </div>

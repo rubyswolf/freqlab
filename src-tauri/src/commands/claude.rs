@@ -375,6 +375,7 @@ pub async fn send_to_claude(
     let mut child = Command::new("claude")
         .current_dir(&project_path)
         .args(&args)
+        .env("PATH", super::get_extended_path())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
@@ -569,6 +570,7 @@ pub async fn send_to_claude(
 pub async fn test_claude_cli() -> Result<String, String> {
     let output = Command::new("claude")
         .args(["--version"])
+        .env("PATH", super::get_extended_path())
         .output()
         .await
         .map_err(|e| format!("Failed to run Claude CLI: {}", e))?;

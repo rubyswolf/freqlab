@@ -1,8 +1,15 @@
 use std::process::Command;
 
+/// Create a git command with extended PATH for bundled app compatibility
+fn git_command() -> Command {
+    let mut cmd = Command::new("git");
+    cmd.env("PATH", super::get_extended_path());
+    cmd
+}
+
 /// Initialize a git repository in the given path
 pub fn init_repo(path: &str) -> Result<(), String> {
-    let output = Command::new("git")
+    let output = git_command()
         .current_dir(path)
         .args(["init"])
         .output()
@@ -14,12 +21,12 @@ pub fn init_repo(path: &str) -> Result<(), String> {
     }
 
     // Configure git user for this repo (avoid global config issues)
-    let _ = Command::new("git")
+    let _ = git_command()
         .current_dir(path)
         .args(["config", "user.email", "freqlab@local"])
         .output();
 
-    let _ = Command::new("git")
+    let _ = git_command()
         .current_dir(path)
         .args(["config", "user.name", "freqlab"])
         .output();
@@ -57,7 +64,7 @@ target/
 /// Stage all changes and commit with the given message
 pub fn commit_changes(path: &str, message: &str) -> Result<String, String> {
     // Stage all changes
-    let add_output = Command::new("git")
+    let add_output = git_command()
         .current_dir(path)
         .args(["add", "-A"])
         .output()
@@ -69,7 +76,7 @@ pub fn commit_changes(path: &str, message: &str) -> Result<String, String> {
     }
 
     // Check if there are changes to commit
-    let status_output = Command::new("git")
+    let status_output = git_command()
         .current_dir(path)
         .args(["status", "--porcelain"])
         .output()
@@ -82,7 +89,7 @@ pub fn commit_changes(path: &str, message: &str) -> Result<String, String> {
     }
 
     // Commit
-    let commit_output = Command::new("git")
+    let commit_output = git_command()
         .current_dir(path)
         .args(["commit", "-m", message])
         .output()
@@ -102,7 +109,7 @@ pub fn commit_changes(path: &str, message: &str) -> Result<String, String> {
 
 /// Get the current HEAD commit hash
 pub fn get_current_commit(path: &str) -> Result<String, String> {
-    let output = Command::new("git")
+    let output = git_command()
         .current_dir(path)
         .args(["rev-parse", "HEAD"])
         .output()
@@ -128,7 +135,7 @@ pub async fn revert_to_commit(
     eprintln!("[DEBUG] revert_to_commit: commit={}, path={}", commit_hash, project_path);
 
     // Verify the commit exists first
-    let verify = Command::new("git")
+    let verify = git_command()
         .current_dir(&project_path)
         .args(["cat-file", "-t", &commit_hash])
         .output()
@@ -140,7 +147,7 @@ pub async fn revert_to_commit(
 
     // Checkout only source files from the target commit with force flag
     // Exclude .vstworkshop/ which contains chat history and session state
-    let checkout_output = Command::new("git")
+    let checkout_output = git_command()
         .current_dir(&project_path)
         .args([
             "checkout",
@@ -165,7 +172,7 @@ pub async fn revert_to_commit(
     }
 
     // Also try Cargo.lock (optional, may not exist)
-    let _ = Command::new("git")
+    let _ = git_command()
         .current_dir(&project_path)
         .args(["checkout", "-f", &commit_hash, "--", "Cargo.lock"])
         .output();
@@ -210,7 +217,7 @@ pub fn ensure_vstworkshop_ignored(path: &str) -> Result<(), String> {
     }
 
     // Remove .vstworkshop from git tracking if it's tracked
-    let _ = Command::new("git")
+    let _ = git_command()
         .current_dir(path)
         .args(["rm", "-r", "--cached", ".vstworkshop/"])
         .output();
@@ -221,7 +228,7 @@ pub fn ensure_vstworkshop_ignored(path: &str) -> Result<(), String> {
 
 /// Check if a path is a git repository
 pub fn is_git_repo(path: &str) -> bool {
-    let output = Command::new("git")
+    let output = git_command()
         .current_dir(path)
         .args(["rev-parse", "--git-dir"])
         .output();

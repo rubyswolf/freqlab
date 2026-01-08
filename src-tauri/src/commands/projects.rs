@@ -69,6 +69,7 @@ fn ensure_nih_plug_docs() -> Result<(), String> {
             "https://github.com/robbert-vdh/nih-plug.git",
             docs_path.to_str().unwrap_or(".nih-plug-docs"),
         ])
+        .env("PATH", super::get_extended_path())
         .output()
         .map_err(|e| format!("Failed to clone nih-plug repo: {}", e))?;
 

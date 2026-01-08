@@ -30,6 +30,7 @@ fn run_command_with_timeout(cmd: &str, args: &[&str], timeout_secs: u64) -> Opti
 
     let mut child = Command::new(cmd)
         .args(args)
+        .env("PATH", super::get_extended_path())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()

@@ -71,6 +71,7 @@ pub async fn build_project(
     let mut child = Command::new("cargo")
         .current_dir(&workspace_path)
         .args(["xtask", "bundle", &package_name, "--release"])
+        .env("PATH", super::get_extended_path())
         .env("WRY_BUILD_SUFFIX", &build_suffix)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
