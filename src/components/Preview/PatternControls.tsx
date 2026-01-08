@@ -6,6 +6,7 @@ import {
   patternPlay,
   patternStop,
   patternSetBpm,
+  patternSetOctaveShift,
 } from '../../api/preview';
 
 interface PatternControlsProps {
@@ -18,12 +19,21 @@ const CATEGORIES: { id: PatternCategory; label: string }[] = [
   { id: 'Drums', label: 'Drums' },
 ];
 
+const OCTAVE_OPTIONS = [
+  { value: -2, label: '-2' },
+  { value: -1, label: '-1' },
+  { value: 0, label: '0' },
+  { value: 1, label: '+1' },
+  { value: 2, label: '+2' },
+];
+
 export function PatternControls({ pluginLoaded }: PatternControlsProps) {
   const [patterns, setPatterns] = useState<PatternInfo[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<PatternCategory>('Melodic');
   const [selectedPattern, setSelectedPattern] = useState<string | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [bpm, setBpm] = useState(120);
+  const [octaveShift, setOctaveShift] = useState(0);
   const [loading, setLoading] = useState(true);
 
   // Use ref to track if we started playback (to know when to show stop button)
@@ -68,17 +78,51 @@ export function PatternControls({ pluginLoaded }: PatternControlsProps) {
 
   const filteredPatterns = patterns.filter(p => p.category === selectedCategory);
 
+  // Handle category change - stop playback if switching away from playing pattern
+  const handleCategoryChange = useCallback(async (category: PatternCategory) => {
+    if (category === selectedCategory) return;
+
+    // If playing and switching categories, stop playback
+    if (isPlaying) {
+      try {
+        await patternStop();
+        setIsPlaying(false);
+        playbackStartedRef.current = false;
+      } catch (err) {
+        console.error('Failed to stop pattern on category change:', err);
+      }
+    }
+
+    // Clear selection and switch category
+    setSelectedPattern(null);
+    setSelectedCategory(category);
+  }, [selectedCategory, isPlaying]);
+
+  // Handle pattern selection - auto-switch if already playing
+  const handlePatternSelect = useCallback(async (patternId: string) => {
+    setSelectedPattern(patternId);
+
+    // If already playing, immediately switch to the new pattern
+    if (isPlaying && pluginLoaded) {
+      try {
+        await patternPlay(patternId, bpm, octaveShift, true);
+      } catch (err) {
+        console.error('Failed to switch pattern:', err);
+      }
+    }
+  }, [isPlaying, pluginLoaded, bpm, octaveShift]);
+
   const handlePlay = useCallback(async () => {
     if (!selectedPattern || !pluginLoaded) return;
 
     try {
-      await patternPlay(selectedPattern, bpm, 0, true);
+      await patternPlay(selectedPattern, bpm, octaveShift, true);
       setIsPlaying(true);
       playbackStartedRef.current = true;
     } catch (err) {
       console.error('Failed to play pattern:', err);
     }
-  }, [selectedPattern, bpm, pluginLoaded]);
+  }, [selectedPattern, bpm, octaveShift, pluginLoaded]);
 
   const handleStop = useCallback(async () => {
     try {
@@ -101,6 +145,17 @@ export function PatternControls({ pluginLoaded }: PatternControlsProps) {
     }
   }, [isPlaying]);
 
+  const handleOctaveChange = useCallback(async (newOctave: number) => {
+    setOctaveShift(newOctave);
+    if (isPlaying) {
+      try {
+        await patternSetOctaveShift(newOctave);
+      } catch (err) {
+        console.error('Failed to set octave shift:', err);
+      }
+    }
+  }, [isPlaying]);
+
   if (loading) {
     return (
       <div className="py-8 text-center">
@@ -117,7 +172,7 @@ export function PatternControls({ pluginLoaded }: PatternControlsProps) {
         {CATEGORIES.map(cat => (
           <button
             key={cat.id}
-            onClick={() => setSelectedCategory(cat.id)}
+            onClick={() => handleCategoryChange(cat.id)}
             className={`flex-1 py-1.5 px-3 rounded-md text-xs font-medium transition-colors ${
               selectedCategory === cat.id
                 ? 'bg-bg-primary text-text-primary shadow-sm'
@@ -139,7 +194,7 @@ export function PatternControls({ pluginLoaded }: PatternControlsProps) {
           filteredPatterns.map(pattern => (
             <button
               key={pattern.id}
-              onClick={() => setSelectedPattern(pattern.id)}
+              onClick={() => handlePatternSelect(pattern.id)}
               className={`w-full px-3 py-2 rounded-lg text-sm text-left transition-colors ${
                 selectedPattern === pattern.id
                   ? 'bg-accent/10 border border-accent/30 text-accent'
@@ -153,6 +208,28 @@ export function PatternControls({ pluginLoaded }: PatternControlsProps) {
             </button>
           ))
         )}
+      </div>
+
+      {/* Octave Shift */}
+      <div className="flex items-center gap-2">
+        <span className="text-xs text-text-muted">Octave</span>
+        <div className="flex gap-1">
+          {OCTAVE_OPTIONS.map(opt => (
+            <button
+              key={opt.value}
+              onClick={() => handleOctaveChange(opt.value)}
+              className={`
+                px-2 py-1 text-xs font-medium rounded transition-colors
+                ${octaveShift === opt.value
+                  ? 'bg-accent text-white'
+                  : 'bg-bg-tertiary text-text-secondary hover:bg-bg-tertiary/80'
+                }
+              `}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Tempo & Play Control */}

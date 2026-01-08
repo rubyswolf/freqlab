@@ -157,6 +157,11 @@ fn player_thread(shared: Arc<PlayerSharedState>) {
     let active_tick = Duration::from_millis(1);  // 1ms when playing for tight timing
     let idle_tick = Duration::from_millis(50);   // 50ms when idle to save CPU
 
+    // Cached state to avoid locking every tick
+    let mut cached_queue: Option<Arc<MidiEventQueue>> = None;
+    let mut cached_pattern_id: Option<String> = None;
+    let mut cached_pattern: Option<&'static super::patterns::Pattern> = None;
+
     loop {
         // Check if we should exit
         if shared.should_stop.load(Ordering::SeqCst) {
@@ -165,9 +170,12 @@ fn player_thread(shared: Arc<PlayerSharedState>) {
 
         // Check if playing
         if !shared.is_playing.load(Ordering::SeqCst) {
-            // Reset position when stopped
+            // Reset position and cache when stopped
             playback_position = 0.0;
             active_notes.clear();
+            cached_pattern_id = None;
+            cached_pattern = None;
+            cached_queue = None; // Clear queue cache so it refreshes on next play
             last_tick = Instant::now();
             // Sleep longer when idle to save CPU
             thread::sleep(idle_tick);
@@ -177,23 +185,49 @@ fn player_thread(shared: Arc<PlayerSharedState>) {
         // Sleep for active tick interval
         thread::sleep(active_tick);
 
-        // Get MIDI queue - if none, stop playback
-        let midi_queue = match shared.midi_queue.lock().clone() {
-            Some(q) => q,
+        // Update cached queue only if needed (check with try_lock to avoid blocking)
+        if cached_queue.is_none() {
+            if let Some(guard) = shared.midi_queue.try_lock() {
+                cached_queue = guard.clone();
+            }
+        }
+
+        // Get MIDI queue from cache - if none, stop playback
+        let midi_queue = match &cached_queue {
+            Some(q) => q.clone(),
             None => {
                 shared.is_playing.store(false, Ordering::SeqCst);
                 continue;
             }
         };
 
-        // Get current parameters
+        // Get current parameters (atomics are fast, no lock needed)
         let bpm = shared.bpm.load(Ordering::SeqCst) as f32;
         let octave_shift = shared.octave_shift.load(Ordering::SeqCst) as u8 as i8;
         let is_looping = shared.is_looping.load(Ordering::SeqCst);
 
-        // Get pattern
-        let pattern_id = shared.current_pattern.lock().clone();
-        let pattern = match pattern_id.as_ref().and_then(|id| get_pattern(id)) {
+        // Check if pattern changed (only lock when needed)
+        let current_pattern_id = if let Some(guard) = shared.current_pattern.try_lock() {
+            guard.clone()
+        } else {
+            // Couldn't get lock, use cached value
+            cached_pattern_id.clone()
+        };
+
+        // Update cached pattern if ID changed
+        if current_pattern_id != cached_pattern_id {
+            cached_pattern_id = current_pattern_id.clone();
+            cached_pattern = current_pattern_id.as_ref().and_then(|id| get_pattern(id));
+            // Reset playback position on pattern change
+            playback_position = 0.0;
+            // Send note-offs for any active notes
+            for active in active_notes.drain(..) {
+                midi_queue.note_off(active.note);
+            }
+        }
+
+        // Get pattern from cache
+        let pattern = match cached_pattern {
             Some(p) => p,
             None => {
                 shared.is_playing.store(false, Ordering::SeqCst);
