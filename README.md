@@ -15,7 +15,7 @@
 
 Most AI apps are trying to replace traditional music/audio creative flows (ie. suno and other gen-ai garbage), I wanted to create something that genuinely assists their creative process instead of replacing it.
 
-This is really for producers and sound designers who aren't developers who've always dreamed of creating unique plugins for art.
+This is really for producers and sound designers who aren't developers who've always dreamed of creating unique plugins for their art.
 
 ### The Workflow
 
