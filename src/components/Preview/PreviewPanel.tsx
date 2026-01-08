@@ -113,15 +113,17 @@ export function PreviewPanel() {
   });
   const levelListenerRef = useRef<(() => void) | null>(null);
   const pluginListenersRef = useRef<(() => void)[]>([]);
-  // Refs to avoid stale closure issues in project-switching cleanup
+  // Refs to avoid stale closure issues in project-switching cleanup and build handlers
   const isPlayingRef = useRef(isPlaying);
   const engineInitializedRef = useRef(engineInitialized);
   const loadedPluginRef = useRef(loadedPlugin);
+  const webviewNeedsFreshBuildRef = useRef(webviewNeedsFreshBuild);
 
   // Keep refs in sync
   isPlayingRef.current = isPlaying;
   engineInitializedRef.current = engineInitialized;
   loadedPluginRef.current = loadedPlugin;
+  webviewNeedsFreshBuildRef.current = webviewNeedsFreshBuild;
 
   // Keep metering ref in sync for debounce access
   const meteringRef = useRef(metering);
@@ -499,10 +501,22 @@ export function PreviewPanel() {
         setPluginAvailable(true);
         setCurrentVersion(version);
         setBuildStatus('ready');
-        setWebviewNeedsFreshBuild(false);
+
+        // For webview projects, check if this was a "fresh build" (first build after switching projects)
+        // If so, DON'T do hot reload - require manual toggle instead
+        // Use ref to get current value - closure might have stale value
+        const isWebviewFreshBuild = activeProject?.uiFramework === 'webview' && webviewNeedsFreshBuildRef.current;
+
+        // Clear webview fresh build flag after ANY successful build
+        // This enables the toggle for manual loading
+        if (activeProject?.uiFramework === 'webview') {
+          setWebviewNeedsFreshBuild(false);
+        }
 
         // If plugin is active, trigger hot reload
-        if (loadedPlugin.status === 'active') {
+        // Use ref to get current status - closure might have stale value after project switch
+        // Skip hot reload for webview fresh builds - these should require manual toggle
+        if (loadedPluginRef.current.status === 'active' && !isWebviewFreshBuild) {
           // Check if editor was open before reload (so we can re-open it)
           let editorWasOpen = false;
           try {
@@ -550,7 +564,7 @@ export function PreviewPanel() {
     return () => {
       cleanup?.();
     };
-  }, [isOpen, activeProject, loadedPlugin.status, setLoadedPlugin]);
+  }, [isOpen, activeProject, setLoadedPlugin]);
 
   // Close plugin and stop playback when switching projects
   // Uses refs to get current values instead of stale closure values
@@ -560,12 +574,21 @@ export function PreviewPanel() {
     return () => {
       // This cleanup runs when activeProject?.name changes (before the new project loads)
       // Using refs ensures we get the current values, not stale closure values
+
+      // IMPORTANT: Reset UI state synchronously FIRST, before async cleanup
+      // This ensures the new project sees correct "unloaded" state immediately
+      if (loadedPluginRef.current.status === 'active') {
+        setLoadedPlugin({ status: 'unloaded' });
+      }
+      if (isPlayingRef.current) {
+        setPlaying(false);
+      }
+
       const cleanupAsync = async () => {
         // Stop playback (using refs for current state)
         if (isPlayingRef.current && engineInitializedRef.current) {
           try {
             await previewApi.previewStop();
-            setPlaying(false);
           } catch (err) {
             console.error('Failed to stop playback on project switch:', err);
           }
@@ -588,18 +611,34 @@ export function PreviewPanel() {
       // Note: This is intentionally not awaited since React cleanup is synchronous
       cleanupAsync();
     };
-  }, [activeProject?.name, setPlaying]);
+  }, [activeProject?.name, setPlaying, setLoadedPlugin]);
 
   // Track when WebView projects need a fresh build (due to wry class name conflicts)
   // When switching to a WebView project, require a fresh build before opening editor
+  // Also reset plugin state on ANY project change to ensure toggle starts OFF
+  const prevProjectNameRef = useRef<string | undefined>(undefined);
   useEffect(() => {
+    // Detect project change (not just initial mount)
+    const projectChanged = prevProjectNameRef.current !== undefined &&
+                           prevProjectNameRef.current !== activeProject?.name;
+    prevProjectNameRef.current = activeProject?.name;
+
+    // On project change, immediately reset plugin state to unloaded
+    // This ensures the toggle shows OFF before any build completes
+    if (projectChanged) {
+      setLoadedPlugin({ status: 'unloaded' });
+      // Also unload from backend to ensure clean state
+      previewApi.pluginCloseEditor().catch(() => {});
+      previewApi.pluginUnload().catch(() => {});
+    }
+
     if (activeProject?.uiFramework === 'webview') {
       // WebView projects need a fresh build after switching to ensure unique class names
       setWebviewNeedsFreshBuild(true);
     } else {
       setWebviewNeedsFreshBuild(false);
     }
-  }, [activeProject?.name, activeProject?.uiFramework]);
+  }, [activeProject?.name, activeProject?.uiFramework, setLoadedPlugin]);
 
   // Handle play/stop
   const handleTogglePlaying = useCallback(async () => {
@@ -945,6 +984,9 @@ export function PreviewPanel() {
                             await previewApi.pluginCloseEditor();
                             await previewApi.pluginUnload();
                             await previewApi.setPluginIsInstrument(false);
+                            // WebView plugins require a fresh build before re-enabling due to
+                            // wry class name conflicts - the class from the previous load still
+                            // exists and will crash if we try to create it again
                             if (activeProject?.uiFramework === 'webview') {
                               setWebviewNeedsFreshBuild(true);
                             }
