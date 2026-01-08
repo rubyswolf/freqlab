@@ -7,13 +7,15 @@
   <strong>A macOS app for creating VST3/CLAP audio plugins through conversation.</strong>
 </p>
 
-> This is a personal side project and is not consistently maintained. Use as-is.
+> This is a personal side project and is not consistently maintained. It was a vibe experiement, so use as-is. Also go hire a dev if you're looking to take plugin development seriously ;)
 
 ---
 
 ## What is freqlab?
 
-freqlab combines [Claude Code](https://docs.anthropic.com/en/docs/claude-code) with [nih-plug](https://github.com/robbert-vdh/nih-plug) to let you build audio plugins by describing what you want. Each plugin project gets its own Claude session that remembers your plugin's architecture, parameters, and history—so you can iterate naturally over time.
+Most AI apps are trying to replace creative (ie. suno and other gen-ai garbage), I wanted to create something that genuinely assists their creative process instead of replacing it.
+
+This is really for producers and sound designers who aren't developers who've always dreamed of creating unique plugins for art.
 
 ### The Workflow
 
@@ -22,9 +24,9 @@ Describe → Build → Preview → Iterate
 ```
 
 1. Create a plugin project and choose a template
-2. Chat to describe what you want—Claude writes the Rust code
+2. Chat to describe what you want, claude code writes the Rust code
 3. One-click build compiles your plugin
-4. Hot reload lets you hear changes instantly
+4. Hot reload lets you hear changes instantly and experiement with the preview panel (send input singals).
 5. Revert to any version if something breaks
 6. Publish directly to your DAW
 
@@ -34,50 +36,50 @@ Describe → Build → Preview → Iterate
 
 ### Conversational Development
 
-| Feature | Description |
-|---------|-------------|
-| **Per-project Claude sessions** | Each plugin has its own Claude agent with full context of your codebase |
-| **Streaming responses** | See Claude's work in real-time as it writes code |
-| **Automatic versioning** | Every change is git-committed with one-click revert |
-| **File attachments** | Drop in reference files, specs, or examples |
+| Feature                         | Description                                                                    |
+| ------------------------------- | ------------------------------------------------------------------------------ |
+| **Per-project Claude sessions** | Each plugin has its own Claude agent with full context of your plugin codebase |
+| **Streaming responses**         | See Claude's work in real-time as it writes code                               |
+| **Automatic versioning**        | Every change is git-committed with one-click revert                            |
+| **File attachments**            | Drop in reference files, specs, or examples                                    |
 
 ### Audio Preview
 
-| Feature | Description |
-|---------|-------------|
-| **Hot reload** | Plugin reloads automatically when code changes—no restart needed |
-| **Test signals** | Built-in sine, noise, sweep, impulse, and chirp generators |
-| **Sample playback** | Load WAV, MP3, or AAC files as input |
-| **Level metering** | Real-time output monitoring |
+| Feature             | Description                                                      |
+| ------------------- | ---------------------------------------------------------------- |
+| **Hot reload**      | Plugin reloads automatically when code changes—no restart needed |
+| **Test signals**    | Built-in sine, noise, sweep, impulse, and chirp generators       |
+| **Sample playback** | Load WAV, MP3, or AAC files as input                             |
+| **Level metering**  | Real-time output monitoring                                      |
 
 ### Build System
 
-| Feature | Description |
-|---------|-------------|
-| **One-click builds** | Compile VST3 + CLAP with a single button |
-| **Streaming output** | Watch the build in real-time, catch errors early |
-| **Versioned artifacts** | Each build saves to `output/{name}/v{version}/` |
-| **DAW publishing** | Copy plugins directly to your DAW's plugin folder |
+| Feature                 | Description                                       |
+| ----------------------- | ------------------------------------------------- |
+| **One-click builds**    | Compile VST3 + CLAP with a single button          |
+| **Streaming output**    | Watch the build in real-time, catch errors early  |
+| **Versioned artifacts** | Each build saves to `output/{name}/v{version}/`   |
+| **DAW publishing**      | Copy plugins directly to your DAW's plugin folder |
 
 ### Plugin Templates
 
 Choose your starting point:
 
-| Type | UI Framework | Description |
-|------|--------------|-------------|
-| **Effect** | WebView / egui / Headless | Process incoming audio |
+| Type           | UI Framework              | Description              |
+| -------------- | ------------------------- | ------------------------ |
+| **Effect**     | WebView / egui / Headless | Process incoming audio   |
 | **Instrument** | WebView / egui / Headless | Generate audio from MIDI |
 
 ---
 
 ## Prerequisites
 
-- **macOS 12+** (Monterey or later)
-- **Xcode Command Line Tools** — `xcode-select --install`
-- **Rust** — via [rustup](https://rustup.rs/)
-- **Claude Code CLI** — requires an active Anthropic subscription
+-   **macOS 12+** (Monterey or later)
+-   **Xcode Command Line Tools** — `xcode-select --install`
+-   **Rust** — via [rustup](https://rustup.rs/)
+-   **Claude Code CLI** — requires an active Anthropic subscription
 
-freqlab checks these on first launch.
+freqlab on-boarding checks these on first launch.
 
 ---
 
@@ -111,7 +113,7 @@ xattr -cr /path/to/YourPlugin.vst3
 
 ### Code Review
 
-Claude generates the plugin code. While templates include safety limiters, always review generated code before distributing.
+Claude generates the plugin code. While templates include safety limiters, always review generated code before distributing. You're generating rust, so make sure to understand what it's doing!
 
 ---
 
@@ -123,19 +125,20 @@ freqlab is **GPL-3.0**. See [LICENSE](LICENSE).
 
 Plugins use [nih-plug](https://github.com/robbert-vdh/nih-plug):
 
-- **nih-plug framework** — ISC license (permissive)
-- **VST3 bindings** — GPL-3.0
+-   **nih-plug framework** — ISC license
+-   **VST3 bindings** — GPL-3.0
 
 **What this means:**
-- VST3 plugins must be GPL-3.0 (provide source on request)
-- CLAP-only plugins have no such requirement
-- You can sell plugins, but must share source if asked
+
+-   VST3 plugins must be GPL-3.0 (provide source on request)
+-   CLAP-only plugins have no such requirement
+-   You can sell plugins, but must share source if asked. But to be honest, just make them for yourself and share with your friends. If you want to actually sell plugins you should be hring a developer or learning to code!
 
 ---
 
 ## Contributing
 
-Contributions welcome, but this is a side project with irregular maintenance.
+Contributions are generally welcome, but this is a side project with irregular maintenance. Mostly just experimenting right now.
 
 ---
 
