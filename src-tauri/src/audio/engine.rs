@@ -62,6 +62,9 @@ struct SharedState {
     // Output levels for metering - using AtomicU32 with f32 bit patterns for lock-free access
     output_level_left: AtomicU32,
     output_level_right: AtomicU32,
+    // Clipping indicators (set when limiter engages, cleared after being read)
+    clipping_left: AtomicBool,
+    clipping_right: AtomicBool,
     // Spectrum analyzer data - stored as AtomicU32 array for lock-free access
     spectrum_bands: [AtomicU32; NUM_BANDS],
     // Plugin hosting
@@ -206,6 +209,13 @@ impl AudioEngineHandle {
             bands[i] = u32_to_f32(band.load(Ordering::Relaxed));
         }
         bands
+    }
+
+    /// Get and clear clipping indicators (returns true if clipping occurred since last check)
+    pub fn get_clipping(&self) -> (bool, bool) {
+        let left = self.shared.clipping_left.swap(false, Ordering::Relaxed);
+        let right = self.shared.clipping_right.swap(false, Ordering::Relaxed);
+        (left, right)
     }
 
     pub fn get_state(&self) -> EngineState {
@@ -397,6 +407,8 @@ impl AudioEngine {
             is_looping: AtomicBool::new(true),
             output_level_left: AtomicU32::new(f32_to_u32(0.0)),
             output_level_right: AtomicU32::new(f32_to_u32(0.0)),
+            clipping_left: AtomicBool::new(false),
+            clipping_right: AtomicBool::new(false),
             spectrum_bands: [INIT_BAND; NUM_BANDS],
             plugin_instance: RwLock::new(None),
             plugin_state: RwLock::new(PluginState::Unloaded),
@@ -560,7 +572,47 @@ impl AudioEngine {
                         }
                     }
 
-                    // Calculate peak levels from final output
+                    // SAFETY LIMITER: Clamp all output to prevent speaker/ear damage
+                    // This protects against poorly written plugins that output >0dB
+                    // Also handles NaN/infinity from buggy plugins
+                    // Also detect clipping for visual indicator
+                    let mut clipped_left = false;
+                    let mut clipped_right = false;
+                    for (i, sample) in data.iter_mut().enumerate() {
+                        // Check for NaN or infinity first (buggy plugins can output these)
+                        if !sample.is_finite() {
+                            *sample = 0.0; // Replace invalid values with silence
+                            // Mark as clipped since this is a plugin error
+                            if channels > 1 {
+                                if i % 2 == 0 { clipped_left = true; } else { clipped_right = true; }
+                            } else {
+                                clipped_left = true;
+                                clipped_right = true;
+                            }
+                        } else if *sample > 1.0 || *sample < -1.0 {
+                            // Determine which channel clipped
+                            if channels > 1 {
+                                if i % 2 == 0 {
+                                    clipped_left = true;
+                                } else {
+                                    clipped_right = true;
+                                }
+                            } else {
+                                clipped_left = true;
+                                clipped_right = true;
+                            }
+                            *sample = sample.clamp(-1.0, 1.0);
+                        }
+                    }
+                    // Set clipping flags (will stay true until read and cleared)
+                    if clipped_left {
+                        shared_clone.clipping_left.store(true, Ordering::Relaxed);
+                    }
+                    if clipped_right {
+                        shared_clone.clipping_right.store(true, Ordering::Relaxed);
+                    }
+
+                    // Calculate peak levels from final output (after limiting)
                     let mut peak_left = 0.0f32;
                     let mut peak_right = 0.0f32;
                     for chunk in data.chunks(channels) {

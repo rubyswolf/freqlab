@@ -42,6 +42,8 @@ export interface OutputMetering {
   leftDb: number;
   rightDb: number;
   spectrum: number[];
+  clippingLeft: boolean;
+  clippingRight: boolean;
 }
 
 interface PreviewState {
@@ -113,6 +115,8 @@ const defaultMetering: OutputMetering = {
   leftDb: -60,
   rightDb: -60,
   spectrum: new Array(32).fill(0),
+  clippingLeft: false,
+  clippingRight: false,
 };
 
 const initialState = {

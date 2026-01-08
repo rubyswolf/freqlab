@@ -189,6 +189,10 @@ export interface MeteringData {
   right_db: number;
   /** Spectrum analyzer band magnitudes (0.0 - 1.0), 32 bands */
   spectrum: number[];
+  /** Left channel clipping indicator */
+  clipping_left: boolean;
+  /** Right channel clipping indicator */
+  clipping_right: boolean;
 }
 
 /**

@@ -258,7 +258,7 @@ export function PreviewPanel() {
   // WebView projects need a fresh build after switching due to wry class name conflicts
   const [webviewNeedsFreshBuild, setWebviewNeedsFreshBuild] = useState(false);
   // Spectrum analyzer toggle
-  const [showSpectrum, setShowSpectrum] = useState(true);
+  const [showSpectrum, setShowSpectrum] = useState(false);
   // Debounced dB values for smoother display (text only)
   const [displayDb, setDisplayDb] = useState({ left: -60, right: -60 });
   const dbUpdateRef = useRef<{ left: number; right: number }>({ left: -60, right: -60 });
@@ -268,6 +268,9 @@ export function PreviewPanel() {
   const [animatedSpectrum, setAnimatedSpectrum] = useState<number[]>(new Array(32).fill(0));
   const [animatedLevels, setAnimatedLevels] = useState({ left: 0, right: 0 });
   const rafIdRef = useRef<number | null>(null);
+  // Clipping indicator with hold (stays lit for 1 second after clip)
+  const [clipHold, setClipHold] = useState({ left: false, right: false });
+  const clipTimeoutRef = useRef<{ left: NodeJS.Timeout | null; right: NodeJS.Timeout | null }>({ left: null, right: null });
   // Collapsible section state
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({
     input: false,
@@ -373,6 +376,42 @@ export function PreviewPanel() {
     };
   }, [isOpen]);
 
+  // Handle clipping indicator with hold time (stays lit for 1 second after clip)
+  // Separate effects for left/right to avoid clearing the other channel's timeout
+  useEffect(() => {
+    if (metering.clippingLeft) {
+      setClipHold(prev => ({ ...prev, left: true }));
+      if (clipTimeoutRef.current.left) clearTimeout(clipTimeoutRef.current.left);
+      clipTimeoutRef.current.left = setTimeout(() => {
+        setClipHold(prev => ({ ...prev, left: false }));
+        clipTimeoutRef.current.left = null;
+      }, 1000);
+    }
+    return () => {
+      if (clipTimeoutRef.current.left) {
+        clearTimeout(clipTimeoutRef.current.left);
+        clipTimeoutRef.current.left = null;
+      }
+    };
+  }, [metering.clippingLeft]);
+
+  useEffect(() => {
+    if (metering.clippingRight) {
+      setClipHold(prev => ({ ...prev, right: true }));
+      if (clipTimeoutRef.current.right) clearTimeout(clipTimeoutRef.current.right);
+      clipTimeoutRef.current.right = setTimeout(() => {
+        setClipHold(prev => ({ ...prev, right: false }));
+        clipTimeoutRef.current.right = null;
+      }, 1000);
+    }
+    return () => {
+      if (clipTimeoutRef.current.right) {
+        clearTimeout(clipTimeoutRef.current.right);
+        clipTimeoutRef.current.right = null;
+      }
+    };
+  }, [metering.clippingRight]);
+
   // Initialize audio engine when panel opens
   useEffect(() => {
     if (!isOpen) return;
@@ -402,7 +441,7 @@ export function PreviewPanel() {
         await previewApi.startLevelMeter();
         if (isCancelled) return;
 
-        // Listen for combined metering data (levels + dB + spectrum)
+        // Listen for combined metering data (levels + dB + spectrum + clipping)
         const unlisten = await previewApi.onMeteringUpdate((data) => {
           setMetering({
             left: data.left,
@@ -410,6 +449,8 @@ export function PreviewPanel() {
             leftDb: data.left_db,
             rightDb: data.right_db,
             spectrum: data.spectrum,
+            clippingLeft: data.clipping_left,
+            clippingRight: data.clipping_right,
           });
         });
         if (isCancelled) {
@@ -1335,9 +1376,15 @@ export function PreviewPanel() {
                                 <div className="absolute left-[100%] w-px h-full bg-red-400/50" title="0dB" />
                               </div>
                             </div>
-                            <span className="text-[10px] text-text-muted w-14 text-right font-mono tabular-nums">
-                              {displayDb.left > -60 ? `${displayDb.left.toFixed(1)}` : '-∞'} dB
-                            </span>
+                            {clipHold.left ? (
+                              <span className="text-[10px] text-red-500 w-14 text-right font-mono font-bold animate-pulse">
+                                CLIP
+                              </span>
+                            ) : (
+                              <span className="text-[10px] text-text-muted w-14 text-right font-mono tabular-nums">
+                                {displayDb.left > -60 ? `${displayDb.left.toFixed(1)}` : '-∞'} dB
+                              </span>
+                            )}
                           </div>
                           <div className="flex items-center gap-2">
                             <span className="text-xs text-text-muted w-3 font-mono">R</span>
@@ -1360,9 +1407,15 @@ export function PreviewPanel() {
                                 <div className="absolute left-[100%] w-px h-full bg-red-400/50" title="0dB" />
                               </div>
                             </div>
-                            <span className="text-[10px] text-text-muted w-14 text-right font-mono tabular-nums">
-                              {displayDb.right > -60 ? `${displayDb.right.toFixed(1)}` : '-∞'} dB
-                            </span>
+                            {clipHold.right ? (
+                              <span className="text-[10px] text-red-500 w-14 text-right font-mono font-bold animate-pulse">
+                                CLIP
+                              </span>
+                            ) : (
+                              <span className="text-[10px] text-text-muted w-14 text-right font-mono tabular-nums">
+                                {displayDb.right > -60 ? `${displayDb.right.toFixed(1)}` : '-∞'} dB
+                              </span>
+                            )}
                           </div>
                         </>
                       );
