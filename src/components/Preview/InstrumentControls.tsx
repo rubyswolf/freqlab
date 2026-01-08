@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react';
 import { PianoKeyboard } from './PianoKeyboard';
 import { PatternControls } from './PatternControls';
+import { MidiFileControls } from './MidiFileControls';
 import { midiAllNotesOff } from '../../api/preview';
 
 interface InstrumentControlsProps {
@@ -15,7 +16,7 @@ type TabId = 'patterns' | 'midi' | 'piano' | 'live';
 
 const TABS: { id: TabId; label: string; enabled: boolean }[] = [
   { id: 'patterns', label: 'Patterns', enabled: true },
-  { id: 'midi', label: 'MIDI File', enabled: false },
+  { id: 'midi', label: 'MIDI File', enabled: true },
   { id: 'piano', label: 'Piano', enabled: true },
   { id: 'live', label: 'Live', enabled: false },
 ];
@@ -150,9 +151,7 @@ export function InstrumentControls({
 
       {/* MIDI File Tab */}
       {activeTab === 'midi' && (
-        <div className="py-8 text-center">
-          <p className="text-sm text-text-secondary">MIDI File (coming soon)</p>
-        </div>
+        <MidiFileControls pluginLoaded={pluginLoaded} />
       )}
 
       {/* Live Tab */}

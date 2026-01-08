@@ -616,3 +616,109 @@ export async function patternSetLooping(looping: boolean): Promise<void> {
 export async function patternIsPlaying(): Promise<boolean> {
   return await invoke('pattern_is_playing');
 }
+
+// =============================================================================
+// MIDI File API
+// =============================================================================
+
+export interface MidiTrackInfo {
+  index: number;
+  name: string | null;
+  note_count: number;
+  channel: number | null;
+  duration_beats: number;
+}
+
+export interface TempoEvent {
+  beat: number;
+  bpm: number;
+}
+
+export interface MidiFileInfo {
+  filename: string;
+  bpm: number;
+  duration_beats: number;
+  tracks: MidiTrackInfo[];
+  tempo_map: TempoEvent[];
+  has_tempo_automation: boolean;
+}
+
+/**
+ * Load a MIDI file (.mid) for playback
+ * @param path - Path to the MIDI file
+ * @returns Information about the loaded file including tracks
+ */
+export async function midiFileLoad(path: string): Promise<MidiFileInfo> {
+  return await invoke('midi_file_load', { path });
+}
+
+/**
+ * Get info about the currently loaded MIDI file
+ * @returns File info or null if no file is loaded
+ */
+export async function midiFileGetInfo(): Promise<MidiFileInfo | null> {
+  return await invoke('midi_file_get_info');
+}
+
+/**
+ * Unload the current MIDI file
+ */
+export async function midiFileUnload(): Promise<void> {
+  await invoke('midi_file_unload');
+}
+
+/**
+ * Play a track from the loaded MIDI file
+ * @param trackIndex - Index into the tracks array (not original MIDI track number)
+ * @param bpm - Tempo override (or null to use file's default BPM)
+ * @param octaveShift - Octave shift (-2 to +2)
+ * @param looping - Whether to loop the track
+ * @param useTempoAutomation - Whether to follow the file's tempo automation
+ */
+export async function midiFilePlay(
+  trackIndex: number,
+  bpm: number | null,
+  octaveShift: number,
+  looping: boolean,
+  useTempoAutomation: boolean
+): Promise<void> {
+  await invoke('midi_file_play', { trackIndex, bpm, octaveShift, looping, useTempoAutomation });
+}
+
+/**
+ * Stop MIDI file playback
+ */
+export async function midiFileStop(): Promise<void> {
+  await invoke('midi_file_stop');
+}
+
+/**
+ * Set tempo automation mode for MIDI file playback
+ * Takes effect immediately during playback
+ */
+export async function midiFileSetTempoAutomation(enabled: boolean): Promise<void> {
+  await invoke('midi_file_set_tempo_automation', { enabled });
+}
+
+/**
+ * Playback position info
+ */
+export interface PlaybackPositionInfo {
+  position: number;
+  duration: number;
+  is_playing: boolean;
+}
+
+/**
+ * Get current MIDI file playback position
+ */
+export async function midiFileGetPosition(): Promise<PlaybackPositionInfo> {
+  return await invoke('midi_file_get_position');
+}
+
+/**
+ * Seek to a position in beats
+ */
+export async function midiFileSeek(positionBeats: number): Promise<void> {
+  await invoke('midi_file_seek', { position_beats: positionBeats });
+}
