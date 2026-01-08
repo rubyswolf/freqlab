@@ -89,6 +89,15 @@ pub fn run() {
             commands::preview::plugin_is_editor_open,
             commands::preview::plugin_idle,
             commands::preview::plugin_reload,
+            // Live input commands
+            commands::preview::get_input_devices,
+            commands::preview::preview_set_live_input,
+            commands::preview::preview_set_live_paused,
+            commands::preview::preview_is_live_paused,
+            commands::preview::preview_get_input_levels,
+            // Master volume commands
+            commands::preview::preview_set_master_volume,
+            commands::preview::preview_get_master_volume,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

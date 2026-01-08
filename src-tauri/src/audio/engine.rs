@@ -1,13 +1,16 @@
 //! Main audio engine using cpal for real-time audio output
 
 use cpal::traits::{DeviceTrait, StreamTrait};
-use parking_lot::RwLock;
+use parking_lot::{Mutex, RwLock};
+use rubato::{FftFixedInOut, Resampler};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU8, Ordering};
 use std::sync::Arc;
 
+use super::buffer::StereoSample;
 use super::device::{get_output_device, get_supported_config, AudioConfig};
+use super::input::{get_input_handle, start_input_capture, stop_input_capture};
 use super::plugin::{PluginInstance, PluginState};
 use super::samples::{AudioSample, SamplePlayer};
 use super::signals::{GatePattern, SignalConfig, SignalGenerator};
@@ -28,6 +31,7 @@ pub enum EngineState {
 pub enum InputSource {
     Signal { config: SignalConfig },
     Sample { path: String },
+    Live { device: Option<String>, chunk_size: Option<usize> },
     None,
 }
 
@@ -55,6 +59,121 @@ const CROSSFADE_SAMPLES: u32 = 4410;
 /// Number of samples in waveform display buffer
 const WAVEFORM_SAMPLES: usize = 256;
 
+/// Live input resampler for handling sample rate mismatch
+struct LiveInputResampler {
+    resampler: FftFixedInOut<f32>,
+    input_buffer_left: Vec<f32>,
+    input_buffer_right: Vec<f32>,
+    output_buffer_left: Vec<f32>,
+    output_buffer_right: Vec<f32>,
+    input_frames_needed: usize,
+    #[allow(dead_code)]
+    output_frames: usize,
+    /// Accumulated input samples (left channel)
+    accum_left: Vec<f32>,
+    /// Accumulated input samples (right channel)
+    accum_right: Vec<f32>,
+    /// Accumulated output samples ready to consume
+    output_ready_left: Vec<f32>,
+    output_ready_right: Vec<f32>,
+}
+
+impl LiveInputResampler {
+    fn new(input_rate: u32, output_rate: u32, chunk_size: usize) -> Result<Self, String> {
+        // FftFixedInOut needs chunk sizes that work with FFT
+        // Use a reasonable chunk size (power of 2 works well)
+        let resampler = FftFixedInOut::<f32>::new(
+            input_rate as usize,
+            output_rate as usize,
+            chunk_size,
+            2, // 2 channels (stereo)
+        ).map_err(|e| format!("Failed to create resampler: {}", e))?;
+
+        let input_frames_needed = resampler.input_frames_next();
+        let output_frames = resampler.output_frames_next();
+
+        log::info!(
+            "Created resampler: {} Hz -> {} Hz, input frames: {}, output frames: {}",
+            input_rate, output_rate, input_frames_needed, output_frames
+        );
+
+        Ok(Self {
+            resampler,
+            input_buffer_left: vec![0.0; input_frames_needed],
+            input_buffer_right: vec![0.0; input_frames_needed],
+            output_buffer_left: vec![0.0; output_frames],
+            output_buffer_right: vec![0.0; output_frames],
+            input_frames_needed,
+            output_frames,
+            accum_left: Vec::with_capacity(input_frames_needed * 2),
+            accum_right: Vec::with_capacity(input_frames_needed * 2),
+            output_ready_left: Vec::with_capacity(output_frames * 2),
+            output_ready_right: Vec::with_capacity(output_frames * 2),
+        })
+    }
+
+    /// Add input samples to the accumulator
+    fn push_input(&mut self, left: f32, right: f32) {
+        self.accum_left.push(left);
+        self.accum_right.push(right);
+    }
+
+    /// Process accumulated input and return resampled output
+    /// Returns None if not enough input samples yet
+    fn process(&mut self) -> bool {
+        // Check if we have enough input samples
+        if self.accum_left.len() < self.input_frames_needed {
+            return false;
+        }
+
+        // Copy input samples to buffers
+        self.input_buffer_left[..self.input_frames_needed]
+            .copy_from_slice(&self.accum_left[..self.input_frames_needed]);
+        self.input_buffer_right[..self.input_frames_needed]
+            .copy_from_slice(&self.accum_right[..self.input_frames_needed]);
+
+        // Remove consumed samples from accumulator
+        self.accum_left.drain(..self.input_frames_needed);
+        self.accum_right.drain(..self.input_frames_needed);
+
+        // Resample
+        let input_buffers = vec![&self.input_buffer_left[..], &self.input_buffer_right[..]];
+        let mut output_buffers = vec![
+            &mut self.output_buffer_left[..],
+            &mut self.output_buffer_right[..],
+        ];
+
+        match self.resampler.process_into_buffer(&input_buffers, &mut output_buffers, None) {
+            Ok((_, output_len)) => {
+                // Add resampled output to ready buffer
+                self.output_ready_left.extend_from_slice(&self.output_buffer_left[..output_len]);
+                self.output_ready_right.extend_from_slice(&self.output_buffer_right[..output_len]);
+                true
+            }
+            Err(e) => {
+                log::error!("Resampler error: {}", e);
+                false
+            }
+        }
+    }
+
+    /// Get the next resampled sample, or None if buffer is empty
+    fn pop_output(&mut self) -> Option<StereoSample> {
+        if self.output_ready_left.is_empty() {
+            None
+        } else {
+            let left = self.output_ready_left.remove(0);
+            let right = self.output_ready_right.remove(0);
+            Some(StereoSample::new(left, right))
+        }
+    }
+
+    /// Check how many output samples are available
+    fn available_output(&self) -> usize {
+        self.output_ready_left.len()
+    }
+}
+
 /// Shared state between engine and audio thread
 struct SharedState {
     input_source: RwLock<InputSource>,
@@ -62,9 +181,18 @@ struct SharedState {
     sample_player: RwLock<SamplePlayer>,
     is_playing: AtomicBool,
     is_looping: AtomicBool,
+    // Master volume (0.0 - 1.0) stored as u32 bits for lock-free access
+    master_volume: AtomicU32,
     // Output levels for metering - using AtomicU32 with f32 bit patterns for lock-free access
     output_level_left: AtomicU32,
     output_level_right: AtomicU32,
+    // Input levels for metering (live input only)
+    input_level_left: AtomicU32,
+    input_level_right: AtomicU32,
+    // Live input paused state
+    live_paused: AtomicBool,
+    // Live input resampler (for sample rate conversion)
+    live_resampler: Mutex<Option<LiveInputResampler>>,
     // Clipping indicators (set when limiter engages, cleared after being read)
     clipping_left: AtomicBool,
     clipping_right: AtomicBool,
@@ -128,6 +256,16 @@ impl AudioEngineHandle {
 
     pub fn set_input_source(&self, source: InputSource) {
         log::info!("AudioEngine: set_input_source called with {:?}", source);
+
+        // Stop any existing live input capture when switching away from Live
+        let current_source = self.shared.input_source.read().clone();
+        if matches!(current_source, InputSource::Live { .. }) && !matches!(source, InputSource::Live { .. }) {
+            log::info!("AudioEngine: Stopping live input capture");
+            stop_input_capture();
+            // Clear resampler
+            *self.shared.live_resampler.lock() = None;
+        }
+
         match &source {
             InputSource::Signal { config } => {
                 log::info!("AudioEngine: Setting signal source");
@@ -142,6 +280,55 @@ impl AudioEngineHandle {
                     }
                     Err(e) => {
                         log::error!("AudioEngine: Failed to load sample: {}", e);
+                    }
+                }
+            }
+            InputSource::Live { device, chunk_size } => {
+                log::info!("AudioEngine: Starting live input capture, device: {:?}, chunk_size: {:?}", device, chunk_size);
+                // Start the input capture using the device's native sample rate
+                // This avoids CoreAudio conflicts - resampling is done in the engine if needed
+                match start_input_capture(device.as_deref()) {
+                    Ok(handle) => {
+                        // Clear buffer to avoid stale data
+                        handle.clear_buffer();
+                        // Reset paused state
+                        self.shared.live_paused.store(false, Ordering::SeqCst);
+
+                        // Check if input device's native rate differs from output rate
+                        // We always use the input's native rate to avoid CoreAudio conflicts
+                        let input_rate = handle.sample_rate();
+                        log::info!("AudioEngine: Input device native sample rate: {} Hz, output: {} Hz", input_rate, self.sample_rate);
+
+                        if input_rate != self.sample_rate {
+                            // Use provided chunk size or default to 256 (good balance of latency vs efficiency)
+                            // Smaller values (64, 128) = lower latency but more CPU
+                            // Larger values (512, 1024) = higher latency but more efficient
+                            let resampler_chunk_size = chunk_size.unwrap_or(256);
+                            log::info!(
+                                "AudioEngine: Sample rate mismatch detected. Input: {} Hz, Output: {} Hz. Creating resampler with chunk size {}.",
+                                input_rate, self.sample_rate, resampler_chunk_size
+                            );
+                            match LiveInputResampler::new(input_rate, self.sample_rate, resampler_chunk_size) {
+                                Ok(resampler) => {
+                                    *self.shared.live_resampler.lock() = Some(resampler);
+                                    log::info!("AudioEngine: Resampler created successfully");
+                                }
+                                Err(e) => {
+                                    log::error!("AudioEngine: Failed to create resampler: {}. Audio will be distorted!", e);
+                                    *self.shared.live_resampler.lock() = None;
+                                }
+                            }
+                        } else {
+                            // Same sample rate - no resampling needed
+                            log::info!("AudioEngine: Sample rates match ({}Hz), no resampling needed", input_rate);
+                            *self.shared.live_resampler.lock() = None;
+                        }
+
+                        log::info!("AudioEngine: Live input capture started successfully");
+                    }
+                    Err(e) => {
+                        log::error!("AudioEngine: Failed to start live input capture: {}", e);
+                        *self.shared.live_resampler.lock() = None;
                     }
                 }
             }
@@ -206,6 +393,44 @@ impl AudioEngineHandle {
         let left = u32_to_f32(self.shared.output_level_left.load(Ordering::Relaxed));
         let right = u32_to_f32(self.shared.output_level_right.load(Ordering::Relaxed));
         (left, right)
+    }
+
+    /// Get input levels (for live input metering)
+    pub fn get_input_levels(&self) -> (f32, f32) {
+        let left = u32_to_f32(self.shared.input_level_left.load(Ordering::Relaxed));
+        let right = u32_to_f32(self.shared.input_level_right.load(Ordering::Relaxed));
+        (left, right)
+    }
+
+    /// Set live input paused state
+    pub fn set_live_paused(&self, paused: bool) {
+        self.shared.live_paused.store(paused, Ordering::SeqCst);
+        // Clear input levels when pausing
+        if paused {
+            self.shared.input_level_left.store(f32_to_u32(0.0), Ordering::Relaxed);
+            self.shared.input_level_right.store(f32_to_u32(0.0), Ordering::Relaxed);
+        } else {
+            // Clear input buffer when unpausing to avoid stale audio
+            if let Some(handle) = get_input_handle() {
+                handle.clear_buffer();
+            }
+        }
+    }
+
+    /// Check if live input is paused
+    pub fn is_live_paused(&self) -> bool {
+        self.shared.live_paused.load(Ordering::SeqCst)
+    }
+
+    /// Set master volume (0.0 - 1.0)
+    pub fn set_master_volume(&self, volume: f32) {
+        let clamped = volume.clamp(0.0, 1.0);
+        self.shared.master_volume.store(f32_to_u32(clamped), Ordering::SeqCst);
+    }
+
+    /// Get master volume (0.0 - 1.0)
+    pub fn get_master_volume(&self) -> f32 {
+        u32_to_f32(self.shared.master_volume.load(Ordering::SeqCst))
     }
 
     /// Get spectrum analyzer band magnitudes (0.0 - 1.0)
@@ -425,8 +650,13 @@ impl AudioEngine {
             sample_player: RwLock::new(SamplePlayer::new()),
             is_playing: AtomicBool::new(false),
             is_looping: AtomicBool::new(true),
+            master_volume: AtomicU32::new(f32_to_u32(0.75)), // Default 75% volume
             output_level_left: AtomicU32::new(f32_to_u32(0.0)),
             output_level_right: AtomicU32::new(f32_to_u32(0.0)),
+            input_level_left: AtomicU32::new(f32_to_u32(0.0)),
+            input_level_right: AtomicU32::new(f32_to_u32(0.0)),
+            live_paused: AtomicBool::new(false),
+            live_resampler: Mutex::new(None),
             clipping_left: AtomicBool::new(false),
             clipping_right: AtomicBool::new(false),
             spectrum_bands: [INIT_BAND; NUM_BANDS],
@@ -495,6 +725,92 @@ impl AudioEngine {
                                 chunk[0] = sample.left;
                                 if channels > 1 {
                                     chunk[1] = sample.right;
+                                }
+                            }
+                        }
+                        InputSource::Live { .. } => {
+                            // Check if paused - if so, output silence
+                            let is_paused = shared_clone.live_paused.load(Ordering::SeqCst);
+                            if is_paused {
+                                for sample in data.iter_mut() {
+                                    *sample = 0.0;
+                                }
+                            } else if let Some(input_handle) = crate::audio::input::get_input_handle() {
+                                let mut peak_left = 0.0f32;
+                                let mut peak_right = 0.0f32;
+
+                                // Check if we need to resample
+                                let mut resampler_guard = shared_clone.live_resampler.lock();
+
+                                if let Some(ref mut resampler) = *resampler_guard {
+                                    // Resampling mode: read input samples, resample, then output
+                                    let frames_needed = data.len() / channels;
+
+                                    // Read enough input samples and feed to resampler
+                                    // We may need to read more samples than output frames due to rate difference
+                                    let available = input_handle.available_samples();
+                                    for _ in 0..available.min(frames_needed * 2) {
+                                        let sample = input_handle.read_sample();
+                                        resampler.push_input(sample.left, sample.right);
+                                        // Track input levels from raw input
+                                        peak_left = peak_left.max(sample.left.abs());
+                                        peak_right = peak_right.max(sample.right.abs());
+                                    }
+
+                                    // Process resampler to generate output
+                                    while resampler.available_output() < frames_needed {
+                                        if !resampler.process() {
+                                            break; // Not enough input yet
+                                        }
+                                    }
+
+                                    // Read resampled output
+                                    for chunk in data.chunks_mut(channels) {
+                                        if let Some(sample) = resampler.pop_output() {
+                                            chunk[0] = sample.left;
+                                            if channels > 1 {
+                                                chunk[1] = sample.right;
+                                            }
+                                        } else {
+                                            // No resampled data available yet, output silence
+                                            chunk[0] = 0.0;
+                                            if channels > 1 {
+                                                chunk[1] = 0.0;
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    // No resampling needed - direct passthrough
+                                    for chunk in data.chunks_mut(channels) {
+                                        let sample = input_handle.read_sample();
+                                        chunk[0] = sample.left;
+                                        if channels > 1 {
+                                            chunk[1] = sample.right;
+                                        }
+                                        // Track input levels
+                                        peak_left = peak_left.max(sample.left.abs());
+                                        peak_right = peak_right.max(sample.right.abs());
+                                    }
+                                }
+
+                                drop(resampler_guard); // Release lock before updating levels
+
+                                // Update input levels with smoothing
+                                let input_smoothing = 0.15f32;
+                                {
+                                    let current = u32_to_f32(shared_clone.input_level_left.load(Ordering::Relaxed));
+                                    let new_level = current * (1.0 - input_smoothing) + peak_left * input_smoothing;
+                                    shared_clone.input_level_left.store(f32_to_u32(new_level), Ordering::Relaxed);
+                                }
+                                {
+                                    let current = u32_to_f32(shared_clone.input_level_right.load(Ordering::Relaxed));
+                                    let new_level = current * (1.0 - input_smoothing) + peak_right * input_smoothing;
+                                    shared_clone.input_level_right.store(f32_to_u32(new_level), Ordering::Relaxed);
+                                }
+                            } else {
+                                // No input handle available, output silence
+                                for sample in data.iter_mut() {
+                                    *sample = 0.0;
                                 }
                             }
                         }
@@ -592,6 +908,12 @@ impl AudioEngine {
                                 }
                             }
                         }
+                    }
+
+                    // Apply master volume before limiting
+                    let master_vol = u32_to_f32(shared_clone.master_volume.load(Ordering::Relaxed));
+                    for sample in data.iter_mut() {
+                        *sample *= master_vol;
                     }
 
                     // SAFETY LIMITER: Clamp all output to prevent speaker/ear damage

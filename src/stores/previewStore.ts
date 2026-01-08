@@ -24,6 +24,13 @@ export interface InputSource {
   gatePattern?: GatePattern;
   gateRate?: number;    // Hz for pulse, BPM for musical divisions
   gateDuty?: number;    // 0.0 - 1.0
+  liveDeviceId?: string;  // Selected input device for live input
+  liveChunkSize?: number; // Resampler chunk size for latency control (64-512)
+}
+
+export interface AudioDevice {
+  name: string;
+  is_default: boolean;
 }
 
 export interface PluginParameter {
@@ -41,6 +48,11 @@ export interface OutputMetering {
   right: number;
   leftDb: number;
   rightDb: number;
+  // Input levels for live input metering
+  inputLeft: number;
+  inputRight: number;
+  inputLeftDb: number;
+  inputRightDb: number;
   spectrum: number[];
   waveform: number[];
   clippingLeft: boolean;
@@ -55,6 +67,9 @@ interface PreviewState {
   isPlaying: boolean;
   isLooping: boolean;
 
+  // Master volume (0.0 - 1.0)
+  masterVolume: number;
+
   // Plugin info
   pluginType: 'effect' | 'instrument' | null;
   projectName: string | null;
@@ -64,6 +79,10 @@ interface PreviewState {
 
   // Input source
   inputSource: InputSource;
+
+  // Live input state
+  isLivePaused: boolean;
+  availableInputDevices: AudioDevice[];
 
   // Build/reload state
   buildStatus: BuildStatus;
@@ -85,11 +104,14 @@ interface PreviewState {
   setPlaying: (playing: boolean) => void;
   togglePlaying: () => void;
   setLooping: (looping: boolean) => void;
+  setMasterVolume: (volume: number) => void;
   setPluginType: (type: 'effect' | 'instrument' | null) => void;
   setProjectName: (name: string | null) => void;
   setLoadedPlugin: (state: PluginState) => void;
   setInputSource: (source: InputSource) => void;
   setSignalFrequency: (freq: number) => void;
+  setLivePaused: (paused: boolean) => void;
+  setAvailableInputDevices: (devices: AudioDevice[]) => void;
   setBuildStatus: (status: BuildStatus) => void;
   setAutoReload: (enabled: boolean) => void;
   setLastReloadTime: (time: number | null) => void;
@@ -108,6 +130,7 @@ const defaultInputSource: InputSource = {
   gatePattern: 'continuous',
   gateRate: 2.0,
   gateDuty: 0.5,
+  liveChunkSize: 128, // Default to low latency (128 samples)
 };
 
 const defaultMetering: OutputMetering = {
@@ -115,6 +138,10 @@ const defaultMetering: OutputMetering = {
   right: 0,
   leftDb: -60,
   rightDb: -60,
+  inputLeft: 0,
+  inputRight: 0,
+  inputLeftDb: -60,
+  inputRightDb: -60,
   spectrum: new Array(32).fill(0),
   waveform: new Array(256).fill(0),
   clippingLeft: false,
@@ -125,10 +152,13 @@ const initialState = {
   isOpen: false,
   isPlaying: false,
   isLooping: true,
+  masterVolume: 0.75, // Default 75% volume
   pluginType: null as 'effect' | 'instrument' | null,
   projectName: null as string | null,
   loadedPlugin: { status: 'unloaded' } as PluginState,
   inputSource: defaultInputSource,
+  isLivePaused: false,
+  availableInputDevices: [] as AudioDevice[],
   buildStatus: 'idle' as BuildStatus,
   isAutoReload: true,
   lastReloadTime: null as number | null,
@@ -148,6 +178,8 @@ export const usePreviewStore = create<PreviewState>()((set) => ({
 
   setLooping: (looping) => set({ isLooping: looping }),
 
+  setMasterVolume: (volume) => set({ masterVolume: volume }),
+
   setPluginType: (type) => set({ pluginType: type }),
   setProjectName: (name) => set({ projectName: name }),
   setLoadedPlugin: (state) => set({ loadedPlugin: state }),
@@ -157,6 +189,9 @@ export const usePreviewStore = create<PreviewState>()((set) => ({
     set((state) => ({
       inputSource: { ...state.inputSource, signalFrequency: freq },
     })),
+
+  setLivePaused: (paused) => set({ isLivePaused: paused }),
+  setAvailableInputDevices: (devices) => set({ availableInputDevices: devices }),
 
   setBuildStatus: (status) => set({ buildStatus: status }),
   setAutoReload: (enabled) => set({ isAutoReload: enabled }),

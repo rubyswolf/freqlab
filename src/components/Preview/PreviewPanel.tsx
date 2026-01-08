@@ -6,6 +6,11 @@ import * as previewApi from '../../api/preview';
 import { open } from '@tauri-apps/plugin-dialog';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
+import { FrequencySelector } from './FrequencySelector';
+import { LevelMeters } from './LevelMeters';
+import { SpectrumAnalyzer } from './SpectrumAnalyzer';
+import { WaveformDisplay } from './WaveformDisplay';
+import { LiveInputControls } from './LiveInputControls';
 
 interface BuildStreamEvent {
   type: 'start' | 'output' | 'error' | 'done';
@@ -32,199 +37,6 @@ const GATE_OPTIONS: { value: GatePattern; label: string; rateLabel: string }[] =
   { value: 'sixteenth', label: '1/16 Notes', rateLabel: 'Tempo (BPM)' },
 ];
 
-// Common frequency notches for the slider (logarithmic scale)
-const FREQ_NOTCHES = [
-  { value: 20, label: '20' },
-  { value: 100, label: '100' },
-  { value: 440, label: '440' },
-  { value: 1000, label: '1k' },
-  { value: 5000, label: '5k' },
-  { value: 10000, label: '10k' },
-  { value: 20000, label: '20k' },
-];
-
-// Musical notes
-const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
-const OCTAVES = [2, 3, 4, 5, 6];
-
-// Convert MIDI note number to frequency (A4 = 69 = 440Hz)
-function midiToFreq(midiNote: number): number {
-  return Math.round(440 * Math.pow(2, (midiNote - 69) / 12));
-}
-
-// Convert note name and octave to MIDI note number
-function noteToMidi(note: string, octave: number): number {
-  const noteIndex = NOTE_NAMES.indexOf(note);
-  return (octave + 1) * 12 + noteIndex;
-}
-
-// Get closest note name and octave from frequency
-function freqToNote(freq: number): { note: string; octave: number } | null {
-  if (freq < 20 || freq > 20000) return null;
-  const midiNote = 69 + 12 * Math.log2(freq / 440);
-  const roundedMidi = Math.round(midiNote);
-  const octave = Math.floor(roundedMidi / 12) - 1;
-  const noteIndex = roundedMidi % 12;
-  return { note: NOTE_NAMES[noteIndex], octave };
-}
-
-// Convert linear slider value (0-1) to frequency (20-20000 Hz, logarithmic)
-function sliderToFreq(value: number): number {
-  const minLog = Math.log10(20);
-  const maxLog = Math.log10(20000);
-  const freq = Math.pow(10, minLog + value * (maxLog - minLog));
-  return Math.round(freq);
-}
-
-// Convert frequency to linear slider value (0-1)
-function freqToSlider(freq: number): number {
-  const minLog = Math.log10(20);
-  const maxLog = Math.log10(20000);
-  return (Math.log10(freq) - minLog) / (maxLog - minLog);
-}
-
-// Frequency Selector Component
-interface FrequencySelectorProps {
-  frequency: number;
-  onChange: (freq: number) => void;
-}
-
-function FrequencySelector({ frequency, onChange }: FrequencySelectorProps) {
-  const [mode, setMode] = useState<'slider' | 'note'>('slider');
-  const [selectedOctave, setSelectedOctave] = useState(4);
-  const [selectedNote, setSelectedNote] = useState<string | null>(null);
-
-  const currentNote = freqToNote(frequency);
-
-  const handleNoteClick = (note: string) => {
-    setSelectedNote(note);
-    const freq = midiToFreq(noteToMidi(note, selectedOctave));
-    onChange(freq);
-  };
-
-  const handleOctaveChange = (octave: number) => {
-    setSelectedOctave(octave);
-    // If a note is selected, update frequency with new octave
-    if (selectedNote) {
-      const freq = midiToFreq(noteToMidi(selectedNote, octave));
-      onChange(freq);
-    }
-  };
-
-  return (
-    <div className="space-y-3">
-      {/* Mode Toggle */}
-      <div className="flex items-center justify-between">
-        <div className="flex gap-1 p-0.5 bg-bg-primary rounded-md">
-          <button
-            onClick={() => setMode('slider')}
-            className={`px-2 py-1 text-xs rounded transition-colors ${
-              mode === 'slider'
-                ? 'bg-bg-tertiary text-text-primary'
-                : 'text-text-muted hover:text-text-secondary'
-            }`}
-          >
-            Frequency
-          </button>
-          <button
-            onClick={() => setMode('note')}
-            className={`px-2 py-1 text-xs rounded transition-colors ${
-              mode === 'note'
-                ? 'bg-bg-tertiary text-text-primary'
-                : 'text-text-muted hover:text-text-secondary'
-            }`}
-          >
-            Note
-          </button>
-        </div>
-        <span className="text-sm font-medium text-accent">
-          {frequency} Hz
-          {currentNote && (
-            <span className="text-text-muted ml-1">
-              ({currentNote.note}{currentNote.octave})
-            </span>
-          )}
-        </span>
-      </div>
-
-      {mode === 'slider' ? (
-        <>
-          {/* Frequency Slider */}
-          <input
-            type="range"
-            min={0}
-            max={1}
-            step={0.001}
-            value={freqToSlider(frequency)}
-            onChange={(e) => onChange(sliderToFreq(Number(e.target.value)))}
-            className="w-full h-2 bg-bg-tertiary rounded-lg appearance-none cursor-pointer accent-accent"
-          />
-          <div className="flex justify-between px-0.5">
-            {FREQ_NOTCHES.map((notch) => (
-              <button
-                key={notch.value}
-                onClick={() => onChange(notch.value)}
-                className={`text-[10px] transition-colors ${
-                  Math.abs(frequency - notch.value) < notch.value * 0.1
-                    ? 'text-accent font-medium'
-                    : 'text-text-muted hover:text-text-secondary'
-                }`}
-              >
-                {notch.label}
-              </button>
-            ))}
-          </div>
-        </>
-      ) : (
-        <>
-          {/* Octave Selector */}
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-text-secondary">Octave:</span>
-            <div className="flex gap-1">
-              {OCTAVES.map((oct) => (
-                <button
-                  key={oct}
-                  onClick={() => handleOctaveChange(oct)}
-                  className={`w-7 h-7 rounded text-xs font-medium transition-colors ${
-                    selectedOctave === oct
-                      ? 'bg-accent text-white'
-                      : 'bg-bg-primary text-text-secondary hover:text-text-primary hover:bg-bg-tertiary'
-                  }`}
-                >
-                  {oct}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Note Grid */}
-          <div className="grid grid-cols-6 gap-1">
-            {NOTE_NAMES.map((note) => {
-              const isSharp = note.includes('#');
-              const isSelected = selectedNote === note;
-              return (
-                <button
-                  key={note}
-                  onClick={() => handleNoteClick(note)}
-                  className={`py-2 rounded text-xs font-medium transition-colors ${
-                    isSelected
-                      ? 'bg-accent text-white'
-                      : isSharp
-                        ? 'bg-bg-primary text-text-muted hover:text-text-primary hover:bg-bg-tertiary'
-                        : 'bg-bg-tertiary text-text-secondary hover:text-text-primary hover:bg-bg-elevated'
-                  }`}
-                >
-                  {note}
-                </button>
-              );
-            })}
-          </div>
-        </>
-      )}
-    </div>
-  );
-}
-
 // No hardcoded samples - we use only what the backend provides or custom files
 
 export function PreviewPanel() {
@@ -246,6 +58,8 @@ export function PreviewPanel() {
     setDemoSamples,
     loadedPlugin,
     setLoadedPlugin,
+    masterVolume,
+    setMasterVolume,
   } = usePreviewStore();
 
   const { activeProject } = useProjectStore();
@@ -263,14 +77,18 @@ export function PreviewPanel() {
   const [showWaveform, setShowWaveform] = useState(false);
   // Debounced dB values for smoother display (text only)
   const [displayDb, setDisplayDb] = useState({ left: -60, right: -60 });
+  const [displayInputDb, setDisplayInputDb] = useState({ left: -60, right: -60 });
   const dbUpdateRef = useRef<{ left: number; right: number }>({ left: -60, right: -60 });
+  const inputDbUpdateRef = useRef<{ left: number; right: number }>({ left: -60, right: -60 });
   // Animated spectrum, waveform, and levels for buttery smooth 60fps rendering
   const animatedSpectrumRef = useRef<number[]>(new Array(32).fill(0));
   const animatedWaveformRef = useRef<number[]>(new Array(256).fill(0));
   const animatedLevelsRef = useRef({ left: 0, right: 0 });
+  const animatedInputLevelsRef = useRef({ left: 0, right: 0 });
   const [animatedSpectrum, setAnimatedSpectrum] = useState<number[]>(new Array(32).fill(0));
   const [animatedWaveform, setAnimatedWaveform] = useState<number[]>(new Array(256).fill(0));
   const [animatedLevels, setAnimatedLevels] = useState({ left: 0, right: 0 });
+  const [animatedInputLevels, setAnimatedInputLevels] = useState({ left: 0, right: 0 });
   const rafIdRef = useRef<number | null>(null);
   // Clipping indicator with hold (stays lit for 1 second after clip)
   const [clipHold, setClipHold] = useState({ left: false, right: false });
@@ -305,6 +123,7 @@ export function PreviewPanel() {
     if (!isOpen) return;
 
     const interval = setInterval(() => {
+      // Output levels
       const newLeft = meteringRef.current.leftDb;
       const newRight = meteringRef.current.rightDb;
       const currentLeft = dbUpdateRef.current.left;
@@ -317,6 +136,20 @@ export function PreviewPanel() {
       if (leftDiff > 1 || rightDiff > 1 || newLeft < currentLeft - 3 || newRight < currentRight - 3) {
         dbUpdateRef.current = { left: newLeft, right: newRight };
         setDisplayDb({ left: newLeft, right: newRight });
+      }
+
+      // Input levels (same logic)
+      const newInputLeft = meteringRef.current.inputLeftDb;
+      const newInputRight = meteringRef.current.inputRightDb;
+      const currentInputLeft = inputDbUpdateRef.current.left;
+      const currentInputRight = inputDbUpdateRef.current.right;
+
+      const inputLeftDiff = Math.abs(newInputLeft - currentInputLeft);
+      const inputRightDiff = Math.abs(newInputRight - currentInputRight);
+
+      if (inputLeftDiff > 1 || inputRightDiff > 1 || newInputLeft < currentInputLeft - 3 || newInputRight < currentInputRight - 3) {
+        inputDbUpdateRef.current = { left: newInputLeft, right: newInputRight };
+        setDisplayInputDb({ left: newInputLeft, right: newInputRight });
       }
     }, 100); // Update at most 10 times per second
 
@@ -365,7 +198,7 @@ export function PreviewPanel() {
         }
       }
 
-      // Interpolate levels
+      // Interpolate output levels
       const currentLevels = animatedLevelsRef.current;
       const leftDiff = (targetLeft || 0) - currentLevels.left;
       const rightDiff = (targetRight || 0) - currentLevels.right;
@@ -374,6 +207,19 @@ export function PreviewPanel() {
         currentLevels.left += leftDiff * smoothingFactor;
         currentLevels.right += rightDiff * smoothingFactor;
         levelsChanged = true;
+      }
+
+      // Interpolate input levels
+      const targetInputLeft = meteringRef.current.inputLeft;
+      const targetInputRight = meteringRef.current.inputRight;
+      const currentInputLevels = animatedInputLevelsRef.current;
+      const inputLeftDiff = (targetInputLeft || 0) - currentInputLevels.left;
+      const inputRightDiff = (targetInputRight || 0) - currentInputLevels.right;
+      let inputLevelsChanged = false;
+      if (Math.abs(inputLeftDiff) > 0.0001 || Math.abs(inputRightDiff) > 0.0001) {
+        currentInputLevels.left += inputLeftDiff * smoothingFactor;
+        currentInputLevels.right += inputRightDiff * smoothingFactor;
+        inputLevelsChanged = true;
       }
 
       // Only trigger re-render if values changed
@@ -385,6 +231,9 @@ export function PreviewPanel() {
       }
       if (levelsChanged) {
         setAnimatedLevels({ ...currentLevels });
+      }
+      if (inputLevelsChanged) {
+        setAnimatedInputLevels({ ...currentInputLevels });
       }
 
       rafIdRef.current = requestAnimationFrame(animate);
@@ -464,13 +313,17 @@ export function PreviewPanel() {
         await previewApi.startLevelMeter();
         if (isCancelled) return;
 
-        // Listen for combined metering data (levels + dB + spectrum + waveform + clipping)
+        // Listen for combined metering data (levels + dB + spectrum + waveform + clipping + input)
         const unlisten = await previewApi.onMeteringUpdate((data) => {
           setMetering({
             left: data.left,
             right: data.right,
             leftDb: data.left_db,
             rightDb: data.right_db,
+            inputLeft: data.input_left,
+            inputRight: data.input_right,
+            inputLeftDb: data.input_left_db,
+            inputRightDb: data.input_right_db,
             spectrum: data.spectrum,
             waveform: data.waveform,
             clippingLeft: data.clipping_left,
@@ -832,6 +685,10 @@ export function PreviewPanel() {
               await previewApi.previewLoadSample(sample.path);
             }
           }
+        } else if (inputSource.type === 'live') {
+          // Set up live input source with chunk size for latency control
+          console.log('Setting up live input:', inputSource.liveDeviceId || 'default', 'chunk size:', inputSource.liveChunkSize || 128);
+          await previewApi.previewSetLiveInput(inputSource.liveDeviceId || null, inputSource.liveChunkSize);
         }
         await previewApi.previewPlay();
         setPlaying(true);
@@ -865,9 +722,23 @@ export function PreviewPanel() {
     }
   }, [setSignalFrequency, engineInitialized, isPlaying, inputSource.type]);
 
-  // Switch input source type (samples <-> signals) - stops playback and clears demo sample selection
+  // Update master volume
+  const handleMasterVolumeChange = useCallback(async (volume: number) => {
+    setMasterVolume(volume);
+    if (engineInitialized) {
+      try {
+        await previewApi.previewSetMasterVolume(volume);
+      } catch (err) {
+        console.error('Failed to set master volume:', err);
+      }
+    }
+  }, [setMasterVolume, engineInitialized]);
+
+  // Switch input source type (samples <-> signals <-> live) - stops playback and clears demo sample selection
   // Custom sample path is preserved across switches
-  const handleInputTypeChange = useCallback(async (type: 'sample' | 'signal') => {
+  const handleInputTypeChange = useCallback(async (type: 'sample' | 'signal' | 'live') => {
+    const { setLivePaused } = usePreviewStore.getState();
+
     // Stop playback when switching modes
     if (isPlaying && engineInitialized) {
       try {
@@ -876,6 +747,11 @@ export function PreviewPanel() {
       } catch (err) {
         console.error('Failed to stop playback:', err);
       }
+    }
+
+    // Reset live paused state when switching to live mode to avoid desync
+    if (type === 'live') {
+      setLivePaused(false);
     }
 
     // Clear demo sample selection but preserve custom path
@@ -1111,6 +987,16 @@ export function PreviewPanel() {
                       >
                         Test Signals
                       </button>
+                      <button
+                        onClick={() => handleInputTypeChange('live')}
+                        className={`flex-1 py-1.5 px-3 rounded-md text-xs font-medium transition-colors ${
+                          inputSource.type === 'live'
+                            ? 'bg-bg-primary text-text-primary shadow-sm'
+                            : 'text-text-secondary hover:text-text-primary'
+                        }`}
+                      >
+                        Live
+                      </button>
                     </div>
 
                     {/* Sample Selection */}
@@ -1275,6 +1161,17 @@ export function PreviewPanel() {
                         </div>
                       </div>
                     )}
+
+                    {/* Live Input Controls */}
+                    {inputSource.type === 'live' && (
+                      <LiveInputControls
+                        engineInitialized={engineInitialized}
+                        isPlaying={isPlaying}
+                        onPlay={handleTogglePlaying}
+                        animatedInputLevels={animatedInputLevels}
+                        displayInputDb={displayInputDb}
+                      />
+                    )}
                   </>
                 )}
 
@@ -1304,8 +1201,8 @@ export function PreviewPanel() {
                 </div>
               )}
 
-              {/* Transport Controls - only for effects */}
-              {effectivePluginType === 'effect' && (
+              {/* Transport Controls - only for effects, hidden in live mode (live has its own controls) */}
+              {effectivePluginType === 'effect' && inputSource.type !== 'live' && (
                 <div className="border-b border-border pb-3">
                   {renderSectionHeader('transport', 'Transport',
                     <svg className="w-4 h-4 text-text-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
@@ -1371,311 +1268,46 @@ export function PreviewPanel() {
                 )}
                 {!collapsedSections.output && (
                 <div className="space-y-3 pt-2">
-                  {/* Level meters with dB readings (using animated values for smooth 60fps) */}
+                  {/* Master Volume */}
                   <div className="space-y-2">
-                    {(() => {
-                      // Convert animated linear levels to dB for smooth bar rendering
-                      const animLeftDb = animatedLevels.left > 0 ? Math.max(-60, 20 * Math.log10(animatedLevels.left)) : -60;
-                      const animRightDb = animatedLevels.right > 0 ? Math.max(-60, 20 * Math.log10(animatedLevels.right)) : -60;
-                      return (
-                        <>
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs text-text-muted w-3 font-mono">L</span>
-                            <div className="flex-1 h-2.5 bg-bg-tertiary rounded-full overflow-hidden relative">
-                              <div
-                                className={`h-full ${
-                                  metering.leftDb > -6 ? 'bg-gradient-to-r from-accent to-yellow-500' :
-                                  metering.leftDb > -3 ? 'bg-gradient-to-r from-yellow-500 to-orange-500' :
-                                  metering.leftDb > -1 ? 'bg-gradient-to-r from-orange-500 to-red-500' :
-                                  'bg-gradient-to-r from-accent to-accent-hover'
-                                }`}
-                                style={{ width: `${Math.max(0, (animLeftDb + 60) / 60 * 100)}%` }}
-                              />
-                              {/* dB notches */}
-                              <div className="absolute inset-0 pointer-events-none">
-                                <div className="absolute left-[50%] w-px h-full bg-white/20" title="-30dB" />
-                                <div className="absolute left-[70%] w-px h-full bg-white/20" title="-18dB" />
-                                <div className="absolute left-[80%] w-px h-full bg-white/25" title="-12dB" />
-                                <div className="absolute left-[90%] w-px h-full bg-yellow-400/40" title="-6dB" />
-                                <div className="absolute left-[100%] w-px h-full bg-red-400/50" title="0dB" />
-                              </div>
-                            </div>
-                            {clipHold.left ? (
-                              <span className="text-[10px] text-red-500 w-14 text-right font-mono font-bold animate-pulse">
-                                CLIP
-                              </span>
-                            ) : (
-                              <span className="text-[10px] text-text-muted w-14 text-right font-mono tabular-nums">
-                                {displayDb.left > -60 ? `${displayDb.left.toFixed(1)}` : '-∞'} dB
-                              </span>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs text-text-muted w-3 font-mono">R</span>
-                            <div className="flex-1 h-2.5 bg-bg-tertiary rounded-full overflow-hidden relative">
-                              <div
-                                className={`h-full ${
-                                  metering.rightDb > -6 ? 'bg-gradient-to-r from-accent to-yellow-500' :
-                                  metering.rightDb > -3 ? 'bg-gradient-to-r from-yellow-500 to-orange-500' :
-                                  metering.rightDb > -1 ? 'bg-gradient-to-r from-orange-500 to-red-500' :
-                                  'bg-gradient-to-r from-accent to-accent-hover'
-                                }`}
-                                style={{ width: `${Math.max(0, (animRightDb + 60) / 60 * 100)}%` }}
-                              />
-                              {/* dB notches */}
-                              <div className="absolute inset-0 pointer-events-none">
-                                <div className="absolute left-[50%] w-px h-full bg-white/20" title="-30dB" />
-                                <div className="absolute left-[70%] w-px h-full bg-white/20" title="-18dB" />
-                                <div className="absolute left-[80%] w-px h-full bg-white/25" title="-12dB" />
-                                <div className="absolute left-[90%] w-px h-full bg-yellow-400/40" title="-6dB" />
-                                <div className="absolute left-[100%] w-px h-full bg-red-400/50" title="0dB" />
-                              </div>
-                            </div>
-                            {clipHold.right ? (
-                              <span className="text-[10px] text-red-500 w-14 text-right font-mono font-bold animate-pulse">
-                                CLIP
-                              </span>
-                            ) : (
-                              <span className="text-[10px] text-text-muted w-14 text-right font-mono tabular-nums">
-                                {displayDb.right > -60 ? `${displayDb.right.toFixed(1)}` : '-∞'} dB
-                              </span>
-                            )}
-                          </div>
-                        </>
-                      );
-                    })()}
-                    {/* dB scale labels */}
-                    <div className="flex items-center gap-2 mt-1">
-                      <span className="w-3"></span>
-                      <div className="flex-1 flex justify-between text-[8px] text-text-muted/60 px-0.5">
-                        <span>-60</span>
-                        <span>-30</span>
-                        <span>-18</span>
-                        <span>-12</span>
-                        <span>-6</span>
-                        <span>0</span>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5">
+                        <svg className="w-3.5 h-3.5 text-text-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+                        </svg>
+                        <span className="text-xs text-text-muted font-medium">Master Volume</span>
                       </div>
-                      <span className="w-14"></span>
+                      <span className="text-xs text-accent font-medium tabular-nums">
+                        {Math.round(masterVolume * 100)}%
+                      </span>
                     </div>
+                    <input
+                      type="range"
+                      min={0}
+                      max={1}
+                      step={0.01}
+                      value={masterVolume}
+                      onChange={(e) => handleMasterVolumeChange(Number(e.target.value))}
+                      className="w-full h-2 bg-bg-tertiary rounded-lg appearance-none cursor-pointer accent-accent"
+                    />
                   </div>
 
-                  {/* Spectrum Analyzer */}
-                  <div className="mt-3">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-xs text-text-muted font-medium">Spectrum</span>
-                      <button
-                        onClick={() => setShowSpectrum(!showSpectrum)}
-                        className={`text-xs px-2 py-0.5 rounded transition-colors ${
-                          showSpectrum
-                            ? 'bg-accent/20 text-accent'
-                            : 'bg-bg-tertiary text-text-muted hover:text-text-primary'
-                        }`}
-                      >
-                        {showSpectrum ? 'On' : 'Off'}
-                      </button>
-                    </div>
-                    {showSpectrum && (
-                    <div className="bg-bg-tertiary rounded-lg border border-border overflow-hidden">
-                      {/* Smooth curve spectrum like FabFilter Pro-Q */}
-                      <svg
-                        viewBox="0 0 400 100"
-                        className="w-full h-28"
-                        preserveAspectRatio="none"
-                      >
-                        {/* Grid lines */}
-                        <defs>
-                          {/* Using accent color #2DA86E directly since CSS vars don't work in SVG */}
-                          <linearGradient id="spectrumGradient" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="0%" stopColor="#2DA86E" stopOpacity="0.7" />
-                            <stop offset="50%" stopColor="#2DA86E" stopOpacity="0.3" />
-                            <stop offset="100%" stopColor="#2DA86E" stopOpacity="0.05" />
-                          </linearGradient>
-                          <linearGradient id="spectrumStroke" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="0%" stopColor="#36C07E" stopOpacity="1" />
-                            <stop offset="100%" stopColor="#2DA86E" stopOpacity="0.7" />
-                          </linearGradient>
-                        </defs>
-                        {/* Horizontal grid lines for dB */}
-                        <line x1="0" y1="16.67" x2="400" y2="16.67" stroke="currentColor" strokeOpacity="0.1" strokeWidth="0.5" />
-                        <line x1="0" y1="50" x2="400" y2="50" stroke="currentColor" strokeOpacity="0.1" strokeWidth="0.5" />
-                        <line x1="0" y1="83.33" x2="400" y2="83.33" stroke="currentColor" strokeOpacity="0.1" strokeWidth="0.5" />
-                        {/* Vertical grid lines for frequencies */}
-                        <line x1="50" y1="0" x2="50" y2="100" stroke="currentColor" strokeOpacity="0.1" strokeWidth="0.5" />
-                        <line x1="125" y1="0" x2="125" y2="100" stroke="currentColor" strokeOpacity="0.1" strokeWidth="0.5" />
-                        <line x1="225" y1="0" x2="225" y2="100" stroke="currentColor" strokeOpacity="0.1" strokeWidth="0.5" />
-                        <line x1="325" y1="0" x2="325" y2="100" stroke="currentColor" strokeOpacity="0.1" strokeWidth="0.5" />
-
-                        {/* Spectrum curve - smooth bezier path */}
-                        {(() => {
-                          // Safety check for empty or too-small spectrum
-                          if (!animatedSpectrum || animatedSpectrum.length < 2) {
-                            return null;
-                          }
-
-                          const numBands = animatedSpectrum.length;
-                          const width = 400;
-                          const height = 100;
-
-                          // Convert magnitudes to Y positions (using animated values for smooth 60fps)
-                          const points = animatedSpectrum.map((mag, i) => {
-                            // Handle edge cases: NaN, undefined, negative
-                            const safeMag = (typeof mag === 'number' && !isNaN(mag) && mag > 0) ? mag : 0;
-                            const db = safeMag > 0 ? 20 * Math.log10(safeMag) : -60;
-                            const normalizedDb = Math.max(0, Math.min(1, (db + 60) / 60));
-                            const x = (i / (numBands - 1)) * width;
-                            const y = height - (normalizedDb * height);
-                            return { x: isNaN(x) ? 0 : x, y: isNaN(y) ? height : y };
-                          });
-
-                          // Create smooth bezier curve path
-                          let pathD = `M ${points[0].x} ${points[0].y}`;
-
-                          for (let i = 0; i < points.length - 1; i++) {
-                            const p0 = points[Math.max(0, i - 1)];
-                            const p1 = points[i];
-                            const p2 = points[i + 1];
-                            const p3 = points[Math.min(points.length - 1, i + 2)];
-
-                            // Catmull-Rom to Bezier conversion
-                            const tension = 0.3;
-                            const cp1x = p1.x + (p2.x - p0.x) * tension;
-                            const cp1y = p1.y + (p2.y - p0.y) * tension;
-                            const cp2x = p2.x - (p3.x - p1.x) * tension;
-                            const cp2y = p2.y - (p3.y - p1.y) * tension;
-
-                            pathD += ` C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${p2.x} ${p2.y}`;
-                          }
-
-                          // Create filled area path
-                          const areaD = pathD + ` L ${width} ${height} L 0 ${height} Z`;
-
-                          return (
-                            <>
-                              {/* Filled area under curve */}
-                              <path
-                                d={areaD}
-                                fill="url(#spectrumGradient)"
-                              />
-                              {/* Curve line */}
-                              <path
-                                d={pathD}
-                                fill="none"
-                                stroke="url(#spectrumStroke)"
-                                strokeWidth="1.5"
-                              />
-                            </>
-                          );
-                        })()}
-                      </svg>
-                      {/* Frequency labels */}
-                      <div className="flex justify-between px-2 py-1 border-t border-border/50 bg-bg-primary/30">
-                        <span className="text-[9px] text-text-muted">20Hz</span>
-                        <span className="text-[9px] text-text-muted">100</span>
-                        <span className="text-[9px] text-text-muted">1k</span>
-                        <span className="text-[9px] text-text-muted">10k</span>
-                        <span className="text-[9px] text-text-muted">20k</span>
-                      </div>
-                    </div>
-                    )}
-                  </div>
-
-                  {/* Waveform Display (Time-Domain) */}
-                  <div className="mt-3">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-xs text-text-muted font-medium">Waveform</span>
-                      <button
-                        onClick={() => setShowWaveform(!showWaveform)}
-                        className={`text-xs px-2 py-0.5 rounded transition-colors ${
-                          showWaveform
-                            ? 'bg-accent/20 text-accent'
-                            : 'bg-bg-tertiary text-text-muted hover:text-text-primary'
-                        }`}
-                      >
-                        {showWaveform ? 'On' : 'Off'}
-                      </button>
-                    </div>
-                    {showWaveform && (
-                    <div className="bg-bg-tertiary rounded-lg border border-border overflow-hidden">
-                      {/* Time-domain waveform display */}
-                      <svg
-                        viewBox="0 0 400 100"
-                        className="w-full h-28"
-                        preserveAspectRatio="none"
-                      >
-                        {/* Grid lines */}
-                        <defs>
-                          <linearGradient id="waveformGradient" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="0%" stopColor="#2DA86E" stopOpacity="0.3" />
-                            <stop offset="50%" stopColor="#2DA86E" stopOpacity="0.05" />
-                            <stop offset="100%" stopColor="#2DA86E" stopOpacity="0.3" />
-                          </linearGradient>
-                          <linearGradient id="waveformStroke" x1="0" y1="0" x2="1" y2="0">
-                            <stop offset="0%" stopColor="#2DA86E" stopOpacity="0.7" />
-                            <stop offset="50%" stopColor="#36C07E" stopOpacity="1" />
-                            <stop offset="100%" stopColor="#2DA86E" stopOpacity="0.7" />
-                          </linearGradient>
-                        </defs>
-                        {/* Center line (0 amplitude) */}
-                        <line x1="0" y1="50" x2="400" y2="50" stroke="currentColor" strokeOpacity="0.2" strokeWidth="0.5" />
-                        {/* Amplitude grid lines (+/-0.5) */}
-                        <line x1="0" y1="25" x2="400" y2="25" stroke="currentColor" strokeOpacity="0.1" strokeWidth="0.5" />
-                        <line x1="0" y1="75" x2="400" y2="75" stroke="currentColor" strokeOpacity="0.1" strokeWidth="0.5" />
-                        {/* Clipping threshold lines */}
-                        <line x1="0" y1="5" x2="400" y2="5" stroke="#ef4444" strokeOpacity="0.2" strokeWidth="0.5" />
-                        <line x1="0" y1="95" x2="400" y2="95" stroke="#ef4444" strokeOpacity="0.2" strokeWidth="0.5" />
-
-                        {/* Waveform path */}
-                        {(() => {
-                          if (!animatedWaveform || animatedWaveform.length < 2) {
-                            return null;
-                          }
-
-                          const numSamples = animatedWaveform.length;
-                          const width = 400;
-
-                          // Convert samples to Y positions (samples are -1 to 1, center is 0.5)
-                          const points = animatedWaveform.map((sample, i) => {
-                            const safeSample = (typeof sample === 'number' && !isNaN(sample)) ? sample : 0;
-                            // Clamp to -1, 1 and convert to y position (center = 50)
-                            const clampedSample = Math.max(-1, Math.min(1, safeSample));
-                            const x = (i / (numSamples - 1)) * width;
-                            const y = 50 - (clampedSample * 45); // 45 gives a bit of padding from edges
-                            return { x: isNaN(x) ? 0 : x, y: isNaN(y) ? 50 : y };
-                          });
-
-                          // Create polyline path (faster than bezier for waveform)
-                          const pathD = `M ${points.map(p => `${p.x} ${p.y}`).join(' L ')}`;
-
-                          // Create filled area (from center line)
-                          const areaD = `M 0 50 L ${points.map(p => `${p.x} ${p.y}`).join(' L ')} L ${width} 50 Z`;
-
-                          return (
-                            <>
-                              {/* Filled area */}
-                              <path
-                                d={areaD}
-                                fill="url(#waveformGradient)"
-                              />
-                              {/* Waveform line */}
-                              <path
-                                d={pathD}
-                                fill="none"
-                                stroke="url(#waveformStroke)"
-                                strokeWidth="1.5"
-                                strokeLinejoin="round"
-                              />
-                            </>
-                          );
-                        })()}
-                      </svg>
-                      {/* Amplitude labels */}
-                      <div className="flex justify-between px-2 py-1 border-t border-border/50 bg-bg-primary/30">
-                        <span className="text-[9px] text-text-muted">Time →</span>
-                        <span className="text-[9px] text-text-muted">-1.0 to +1.0</span>
-                      </div>
-                    </div>
-                    )}
-                  </div>
+                  <LevelMeters
+                    animatedLevels={animatedLevels}
+                    metering={{ leftDb: metering.leftDb, rightDb: metering.rightDb }}
+                    displayDb={displayDb}
+                    clipHold={clipHold}
+                  />
+                  <SpectrumAnalyzer
+                    animatedSpectrum={animatedSpectrum}
+                    showSpectrum={showSpectrum}
+                    onToggle={() => setShowSpectrum(!showSpectrum)}
+                  />
+                  <WaveformDisplay
+                    animatedWaveform={animatedWaveform}
+                    showWaveform={showWaveform}
+                    onToggle={() => setShowWaveform(!showWaveform)}
+                  />
                 </div>
                 )}
               </div>

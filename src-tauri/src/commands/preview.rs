@@ -9,7 +9,7 @@ use tauri::{Emitter, Manager};
 static LEVEL_METER_RUNNING: AtomicBool = AtomicBool::new(false);
 
 use crate::audio::{
-    device::{get_default_sample_rate, list_output_devices, AudioConfig, AudioDeviceInfo},
+    device::{get_default_sample_rate, list_input_devices, list_output_devices, AudioConfig, AudioDeviceInfo},
     engine::{get_engine_handle, get_engine_sample_rate, init_engine, reinit_engine, shutdown_engine, EngineState, InputSource},
     plugin::PluginState,
     signals::{GatePattern, SignalConfig, SignalType},
@@ -25,14 +25,22 @@ pub struct PreviewState {
 /// Audio metering data sent to frontend
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MeteringData {
-    /// Left channel level (0.0 - 1.0)
+    /// Left channel output level (0.0 - 1.0)
     pub left: f32,
-    /// Right channel level (0.0 - 1.0)
+    /// Right channel output level (0.0 - 1.0)
     pub right: f32,
-    /// Left channel level in dB (-60 to 0)
+    /// Left channel output level in dB (-60 to 0)
     pub left_db: f32,
-    /// Right channel level in dB (-60 to 0)
+    /// Right channel output level in dB (-60 to 0)
     pub right_db: f32,
+    /// Left channel input level (0.0 - 1.0) - for live input metering
+    pub input_left: f32,
+    /// Right channel input level (0.0 - 1.0) - for live input metering
+    pub input_right: f32,
+    /// Left channel input level in dB (-60 to 0)
+    pub input_left_db: f32,
+    /// Right channel input level in dB (-60 to 0)
+    pub input_right_db: f32,
     /// Spectrum analyzer band magnitudes (0.0 - 1.0)
     pub spectrum: Vec<f32>,
     /// Waveform display buffer (time-domain samples, -1.0 to 1.0)
@@ -402,6 +410,7 @@ pub fn start_level_meter(app_handle: tauri::AppHandle) -> Result<(), String> {
 
             if let Some(handle) = get_engine_handle() {
                 let (left, right) = handle.get_output_levels();
+                let (input_left, input_right) = handle.get_input_levels();
                 let spectrum = handle.get_spectrum_data();
                 let waveform = handle.get_waveform_data();
                 let (clipping_left, clipping_right) = handle.get_clipping();
@@ -412,6 +421,10 @@ pub fn start_level_meter(app_handle: tauri::AppHandle) -> Result<(), String> {
                     right,
                     left_db: level_to_db(left),
                     right_db: level_to_db(right),
+                    input_left,
+                    input_right,
+                    input_left_db: level_to_db(input_left),
+                    input_right_db: level_to_db(input_right),
                     spectrum: spectrum.to_vec(),
                     waveform,
                     clipping_left,
@@ -673,4 +686,60 @@ pub fn plugin_reload(
             Err(e)
         }
     }
+}
+
+// =============================================================================
+// Live Input Commands
+// =============================================================================
+
+/// Get list of available audio input devices
+#[tauri::command]
+pub fn get_input_devices() -> Result<Vec<AudioDeviceInfo>, String> {
+    list_input_devices()
+}
+
+/// Set the input source to live audio input
+/// chunk_size: Resampler chunk size (default: 256). Smaller = lower latency, larger = less CPU
+#[tauri::command]
+pub fn preview_set_live_input(device_name: Option<String>, chunk_size: Option<usize>) -> Result<(), String> {
+    let handle = get_engine_handle().ok_or_else(|| "Audio engine not initialized".to_string())?;
+    handle.set_input_source(InputSource::Live { device: device_name, chunk_size });
+    Ok(())
+}
+
+/// Set the live input paused state
+#[tauri::command]
+pub fn preview_set_live_paused(paused: bool) -> Result<(), String> {
+    let handle = get_engine_handle().ok_or_else(|| "Audio engine not initialized".to_string())?;
+    handle.set_live_paused(paused);
+    Ok(())
+}
+
+/// Get live input paused state
+#[tauri::command]
+pub fn preview_is_live_paused() -> Result<bool, String> {
+    let handle = get_engine_handle().ok_or_else(|| "Audio engine not initialized".to_string())?;
+    Ok(handle.is_live_paused())
+}
+
+/// Get input levels (for live input metering)
+#[tauri::command]
+pub fn preview_get_input_levels() -> Result<(f32, f32), String> {
+    let handle = get_engine_handle().ok_or_else(|| "Audio engine not initialized".to_string())?;
+    Ok(handle.get_input_levels())
+}
+
+/// Set master volume (0.0 - 1.0)
+#[tauri::command]
+pub fn preview_set_master_volume(volume: f32) -> Result<(), String> {
+    let handle = get_engine_handle().ok_or_else(|| "Audio engine not initialized".to_string())?;
+    handle.set_master_volume(volume);
+    Ok(())
+}
+
+/// Get master volume (0.0 - 1.0)
+#[tauri::command]
+pub fn preview_get_master_volume() -> Result<f32, String> {
+    let handle = get_engine_handle().ok_or_else(|| "Audio engine not initialized".to_string())?;
+    Ok(handle.get_master_volume())
 }

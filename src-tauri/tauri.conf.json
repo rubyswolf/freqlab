@@ -32,7 +32,10 @@
         "resources": {
             "../.samples/*": "samples/"
         },
-        "createUpdaterArtifacts": true
+        "createUpdaterArtifacts": true,
+        "macOS": {
+            "entitlements": "./entitlements.plist"
+        }
     },
     "plugins": {
         "updater": {

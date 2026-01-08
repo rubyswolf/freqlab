@@ -179,14 +179,22 @@ export function onLevelUpdate(
  * Metering data with levels, dB, spectrum, and waveform
  */
 export interface MeteringData {
-  /** Left channel level (0.0 - 1.0) */
+  /** Left channel output level (0.0 - 1.0) */
   left: number;
-  /** Right channel level (0.0 - 1.0) */
+  /** Right channel output level (0.0 - 1.0) */
   right: number;
-  /** Left channel level in dB (-60 to 0) */
+  /** Left channel output level in dB (-60 to 0) */
   left_db: number;
-  /** Right channel level in dB (-60 to 0) */
+  /** Right channel output level in dB (-60 to 0) */
   right_db: number;
+  /** Left channel input level (0.0 - 1.0) - for live input metering */
+  input_left: number;
+  /** Right channel input level (0.0 - 1.0) - for live input metering */
+  input_right: number;
+  /** Left channel input level in dB (-60 to 0) */
+  input_left_db: number;
+  /** Right channel input level in dB (-60 to 0) */
+  input_right_db: number;
   /** Spectrum analyzer band magnitudes (0.0 - 1.0), 32 bands */
   spectrum: number[];
   /** Waveform display buffer (time-domain samples, -1.0 to 1.0), 256 samples */
@@ -388,4 +396,64 @@ export function onPluginReloading(callback: (path: string) => void): Promise<Unl
   return listen<string>('plugin-reloading', (event) => {
     callback(event.payload);
   });
+}
+
+// =============================================================================
+// Live Input API
+// =============================================================================
+
+export interface InputDeviceInfo {
+  name: string;
+  is_default: boolean;
+}
+
+/**
+ * Get list of available audio input devices
+ */
+export async function getInputDevices(): Promise<InputDeviceInfo[]> {
+  return await invoke('get_input_devices');
+}
+
+/**
+ * Set the input source to live audio input
+ * @param deviceName - Name of the input device, or null for system default
+ * @param chunkSize - Resampler chunk size (default: 256). Smaller = lower latency, larger = less CPU
+ */
+export async function previewSetLiveInput(deviceName?: string | null, chunkSize?: number): Promise<void> {
+  await invoke('preview_set_live_input', { deviceName: deviceName || null, chunkSize });
+}
+
+/**
+ * Set the live input paused state
+ */
+export async function previewSetLivePaused(paused: boolean): Promise<void> {
+  await invoke('preview_set_live_paused', { paused });
+}
+
+/**
+ * Get live input paused state
+ */
+export async function previewIsLivePaused(): Promise<boolean> {
+  return await invoke('preview_is_live_paused');
+}
+
+/**
+ * Get input levels (for live input metering)
+ */
+export async function previewGetInputLevels(): Promise<[number, number]> {
+  return await invoke('preview_get_input_levels');
+}
+
+/**
+ * Set master volume (0.0 - 1.0)
+ */
+export async function previewSetMasterVolume(volume: number): Promise<void> {
+  await invoke('preview_set_master_volume', { volume });
+}
+
+/**
+ * Get master volume (0.0 - 1.0)
+ */
+export async function previewGetMasterVolume(): Promise<number> {
+  return await invoke('preview_get_master_volume');
 }
