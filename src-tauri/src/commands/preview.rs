@@ -1008,3 +1008,150 @@ pub fn pattern_is_playing() -> bool {
         false
     }
 }
+
+// =============================================================================
+// MIDI File Commands
+// =============================================================================
+
+use crate::audio::midi::{MidiFileInfo, parse_midi_file, get_midi_file_info};
+use std::path::Path;
+
+/// Global state for loaded MIDI file
+static LOADED_MIDI_FILE: Lazy<Mutex<Option<crate::audio::midi::ParsedMidiFile>>> = Lazy::new(|| Mutex::new(None));
+
+/// Load a MIDI file and return track information
+#[tauri::command]
+pub fn midi_file_load(path: String) -> Result<MidiFileInfo, String> {
+    log::info!("midi_file_load: {}", path);
+
+    let parsed = parse_midi_file(Path::new(&path))?;
+    let info = get_midi_file_info(&parsed);
+
+    // Store the parsed file for playback
+    *LOADED_MIDI_FILE.lock() = Some(parsed);
+
+    log::info!("midi_file_load: loaded {} tracks", info.tracks.len());
+    Ok(info)
+}
+
+/// Get info about the currently loaded MIDI file
+#[tauri::command]
+pub fn midi_file_get_info() -> Option<MidiFileInfo> {
+    LOADED_MIDI_FILE.lock().as_ref().map(get_midi_file_info)
+}
+
+/// Unload the current MIDI file
+#[tauri::command]
+pub fn midi_file_unload() {
+    log::info!("midi_file_unload");
+
+    // Clear the file first (consistent lock order: LOADED_MIDI_FILE before MIDI_PLAYER)
+    *LOADED_MIDI_FILE.lock() = None;
+
+    // Then stop playback if playing a MIDI file
+    if let Some(player) = MIDI_PLAYER.lock().as_ref() {
+        if player.get_source() == crate::audio::midi::PlaybackSource::MidiFile {
+            player.stop();
+        }
+    }
+}
+
+/// Play a track from the loaded MIDI file
+#[tauri::command]
+pub fn midi_file_play(
+    track_index: usize,
+    bpm: Option<u32>,
+    octave_shift: i8,
+    looping: bool,
+    use_tempo_automation: bool,
+) -> Result<(), String> {
+    log::info!("midi_file_play: track={}, bpm={:?}, octave={}, loop={}, tempo_auto={}",
+        track_index, bpm, octave_shift, looping, use_tempo_automation);
+
+    // Get the loaded file
+    let file_lock = LOADED_MIDI_FILE.lock();
+    let parsed = file_lock.as_ref().ok_or("No MIDI file loaded")?;
+
+    // Find the track (track_index is the index in our tracks array, not the original MIDI track index)
+    if track_index >= parsed.track_notes.len() {
+        return Err(format!("Track index {} out of range (have {} tracks)", track_index, parsed.track_notes.len()));
+    }
+
+    let notes = parsed.track_notes[track_index].clone();
+    let duration_beats = parsed.tracks[track_index].duration_beats;
+    let file_bpm = bpm.unwrap_or(parsed.bpm as u32);
+    let tempo_map = parsed.tempo_map.clone();
+
+    // Get the player
+    let player_lock = get_midi_player()?;
+    let player = player_lock.as_ref().ok_or("MIDI player not initialized")?;
+
+    // Ensure the MIDI queue is set
+    if let Some(handle) = get_engine_handle() {
+        if let Some(queue) = handle.get_plugin_midi_queue() {
+            player.set_midi_queue(Some(queue));
+        } else {
+            return Err("No plugin loaded - cannot play MIDI file".to_string());
+        }
+    } else {
+        return Err("Audio engine not running".to_string());
+    }
+
+    // Start playback
+    player.play_midi_file(notes, duration_beats, file_bpm, octave_shift, looping, tempo_map, use_tempo_automation)?;
+
+    Ok(())
+}
+
+/// Set tempo automation mode for MIDI file playback
+#[tauri::command]
+pub fn midi_file_set_tempo_automation(enabled: bool) -> Result<(), String> {
+    let player_lock = get_midi_player()?;
+    if let Some(player) = player_lock.as_ref() {
+        player.set_tempo_automation(enabled);
+    }
+    Ok(())
+}
+
+/// Stop MIDI file playback
+#[tauri::command]
+pub fn midi_file_stop() -> Result<(), String> {
+    let player_lock = get_midi_player()?;
+    if let Some(player) = player_lock.as_ref() {
+        player.stop();
+    }
+    Ok(())
+}
+
+/// Playback position info returned to frontend
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct PlaybackPositionInfo {
+    /// Current position in beats
+    pub position: f32,
+    /// Total duration in beats
+    pub duration: f32,
+    /// Whether playback is active
+    pub is_playing: bool,
+}
+
+/// Get current MIDI file playback position
+#[tauri::command]
+pub fn midi_file_get_position() -> Result<PlaybackPositionInfo, String> {
+    let player_lock = get_midi_player()?;
+    let player = player_lock.as_ref().ok_or("MIDI player not initialized")?;
+
+    Ok(PlaybackPositionInfo {
+        position: player.get_position(),
+        duration: player.get_duration(),
+        is_playing: player.is_playing(),
+    })
+}
+
+/// Seek to a position in the MIDI file
+#[tauri::command]
+pub fn midi_file_seek(position_beats: f32) -> Result<(), String> {
+    let player_lock = get_midi_player()?;
+    let player = player_lock.as_ref().ok_or("MIDI player not initialized")?;
+    player.seek(position_beats);
+    Ok(())
+}

@@ -114,6 +114,15 @@ pub fn run() {
             commands::preview::pattern_set_octave_shift,
             commands::preview::pattern_set_looping,
             commands::preview::pattern_is_playing,
+            // MIDI file commands
+            commands::preview::midi_file_load,
+            commands::preview::midi_file_get_info,
+            commands::preview::midi_file_unload,
+            commands::preview::midi_file_play,
+            commands::preview::midi_file_stop,
+            commands::preview::midi_file_set_tempo_automation,
+            commands::preview::midi_file_get_position,
+            commands::preview::midi_file_seek,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

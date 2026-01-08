@@ -7,7 +7,8 @@
   <strong>A macOS app for creating VST3/CLAP audio plugins through conversation.</strong>
 </p>
 
-> This is a personal side project and is not consistently maintained. It was a vibe experiement, so use as-is. Also go hire a dev if you're looking to take plugin development seriously ;)
+> This is a personal side project I initally build for my wife who's a sound designer and is not consistently maintained. It was a vibe experiement, so use as-is.
+> Also go hire a dev if you're looking to take plugin development seriously ;)
 
 ---
 

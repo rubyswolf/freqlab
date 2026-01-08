@@ -51,6 +51,7 @@ realfft = "3.3"  # FFT for spectrum analysis
 rubato = "0.16"  # Sample rate conversion for live input
 env_logger = "0.11"
 base64 = "0.22"
+midly = "0.5"  # MIDI file parsing
 
 # macOS native UI for plugin editor windows (using modern objc2 crates)
 [target.'cfg(target_os = "macos")'.dependencies]
