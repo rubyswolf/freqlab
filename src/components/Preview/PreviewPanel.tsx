@@ -1632,7 +1632,6 @@ export function PreviewPanel() {
 
                           const numSamples = animatedWaveform.length;
                           const width = 400;
-                          const height = 100;
 
                           // Convert samples to Y positions (samples are -1 to 1, center is 0.5)
                           const points = animatedWaveform.map((sample, i) => {
