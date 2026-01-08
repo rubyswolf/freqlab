@@ -47,93 +47,69 @@ export function ProjectCard({ project, isActive, isBusy, busyType, collapsed = f
     }
   };
 
-  // Collapsed view - icon only
-  if (collapsed) {
-    return (
-      <div
-        onClick={onClick}
-        className={`w-12 h-12 rounded-xl transition-all duration-200 cursor-pointer flex items-center justify-center ${
-          isActive
-            ? 'bg-accent-subtle border border-accent/30'
-            : 'hover:bg-bg-tertiary border border-transparent'
-        }`}
-        title={project.name}
-      >
-        {isBusy ? (
-          <Spinner size="sm" className={isActive ? 'text-accent' : 'text-text-muted'} />
-        ) : project.template === 'instrument' ? (
-          <svg className={`w-5 h-5 ${isActive ? 'text-accent' : 'text-text-muted'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-            <rect x="2" y="4" width="20" height="16" rx="2" />
-            <path d="M6 4v10M10 4v10M14 4v10M18 4v10" />
-            <rect x="5" y="4" width="2" height="6" fill="currentColor" />
-            <rect x="9" y="4" width="2" height="6" fill="currentColor" />
-            <rect x="13" y="4" width="2" height="6" fill="currentColor" />
-            <rect x="17" y="4" width="2" height="6" fill="currentColor" />
-          </svg>
-        ) : (
-          <svg className={`w-5 h-5 ${isActive ? 'text-accent' : 'text-text-muted'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-            <path strokeLinecap="round" d="M6 4v16M12 4v16M18 4v16" />
-            <rect x="4" y="6" width="4" height="3" rx="1" fill="currentColor" />
-            <rect x="10" y="12" width="4" height="3" rx="1" fill="currentColor" />
-            <rect x="16" y="9" width="4" height="3" rx="1" fill="currentColor" />
-          </svg>
-        )}
-      </div>
+  // Render icon based on template type
+  const renderIcon = () => {
+    if (isBusy) {
+      return <Spinner size="sm" className={isActive ? 'text-accent' : 'text-text-muted'} />;
+    }
+    return project.template === 'instrument' ? (
+      <svg className={`w-5 h-5 ${isActive ? 'text-accent' : 'text-text-muted'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+        <rect x="2" y="4" width="20" height="16" rx="2" />
+        <path d="M6 4v10M10 4v10M14 4v10M18 4v10" />
+        <rect x="5" y="4" width="2" height="6" fill="currentColor" />
+        <rect x="9" y="4" width="2" height="6" fill="currentColor" />
+        <rect x="13" y="4" width="2" height="6" fill="currentColor" />
+        <rect x="17" y="4" width="2" height="6" fill="currentColor" />
+      </svg>
+    ) : (
+      <svg className={`w-5 h-5 ${isActive ? 'text-accent' : 'text-text-muted'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+        <path strokeLinecap="round" d="M6 4v16M12 4v16M18 4v16" />
+        <rect x="4" y="6" width="4" height="3" rx="1" fill="currentColor" />
+        <rect x="10" y="12" width="4" height="3" rx="1" fill="currentColor" />
+        <rect x="16" y="9" width="4" height="3" rx="1" fill="currentColor" />
+      </svg>
     );
-  }
+  };
 
   return (
     <>
       <div
         onClick={onClick}
-        className={`group w-full text-left p-3 rounded-xl transition-all duration-200 cursor-pointer ${
+        className={`group text-left rounded-xl cursor-pointer transition-all duration-300 ease-in-out ${
+          collapsed ? 'w-12 h-12 p-0' : 'w-full p-3'
+        } ${
           isActive
             ? 'bg-accent-subtle border border-accent/30'
             : 'hover:bg-bg-tertiary border border-transparent'
         }`}
+        title={collapsed ? project.name : undefined}
       >
-        <div className="flex items-start gap-3">
-          <div className={`w-9 h-9 rounded-lg flex items-center justify-center text-lg flex-shrink-0 ${
-            isActive ? 'bg-accent/20' : 'bg-bg-elevated'
+        <div className={`flex items-start transition-all duration-300 ${collapsed ? 'justify-center items-center h-full' : 'gap-3'}`}>
+          <div className={`rounded-lg flex items-center justify-center text-lg flex-shrink-0 transition-all duration-300 ${
+            collapsed ? 'w-full h-full' : 'w-9 h-9'
+          } ${
+            isActive && !collapsed ? 'bg-accent/20' : collapsed ? '' : 'bg-bg-elevated'
           }`}>
-            {isBusy ? (
-              <Spinner size="sm" className={isActive ? 'text-accent' : 'text-text-muted'} />
-            ) : project.template === 'instrument' ? (
-              // Instrument icon (piano keys)
-              <svg className={`w-5 h-5 ${isActive ? 'text-accent' : 'text-text-muted'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                <rect x="2" y="4" width="20" height="16" rx="2" />
-                <path d="M6 4v10M10 4v10M14 4v10M18 4v10" />
-                <rect x="5" y="4" width="2" height="6" fill="currentColor" />
-                <rect x="9" y="4" width="2" height="6" fill="currentColor" />
-                <rect x="13" y="4" width="2" height="6" fill="currentColor" />
-                <rect x="17" y="4" width="2" height="6" fill="currentColor" />
-              </svg>
-            ) : (
-              // Effect icon (mixer sliders)
-              <svg className={`w-5 h-5 ${isActive ? 'text-accent' : 'text-text-muted'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                <path strokeLinecap="round" d="M6 4v16M12 4v16M18 4v16" />
-                <rect x="4" y="6" width="4" height="3" rx="1" fill="currentColor" />
-                <rect x="10" y="12" width="4" height="3" rx="1" fill="currentColor" />
-                <rect x="16" y="9" width="4" height="3" rx="1" fill="currentColor" />
-              </svg>
-            )}
+            {renderIcon()}
           </div>
-          <div className="flex-1 min-w-0">
+          <div className={`flex-1 min-w-0 overflow-hidden transition-all duration-300 ${
+            collapsed ? 'w-0 opacity-0' : 'w-auto opacity-100 delay-100'
+          }`}>
             <div className="flex items-center gap-2">
-              <span className={`font-medium truncate ${isActive ? 'text-accent' : 'text-text-primary'}`}>
+              <span className={`font-medium truncate whitespace-nowrap ${isActive ? 'text-accent' : 'text-text-primary'}`}>
                 {project.name}
               </span>
               {isBusy && (
-                <span className="text-xs text-text-muted flex-shrink-0">
+                <span className="text-xs text-text-muted flex-shrink-0 whitespace-nowrap">
                   {busyType === 'claude' ? 'Working...' : 'Building...'}
                 </span>
               )}
             </div>
-            <div className="text-xs text-text-muted truncate mt-0.5">
+            <div className="text-xs text-text-muted truncate mt-0.5 whitespace-nowrap">
               {project.description || 'No description'}
             </div>
             <div className="flex items-center justify-between mt-1">
-              <span className="text-xs text-text-muted">
+              <span className="text-xs text-text-muted whitespace-nowrap">
                 {timeAgo(project.updated_at)}
               </span>
               <button
