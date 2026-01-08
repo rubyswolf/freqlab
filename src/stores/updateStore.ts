@@ -3,8 +3,8 @@ import { create } from 'zustand';
 export interface UpdateInfo {
   version: string;
   currentVersion: string;
-  date: string | null;
-  body: string | null;
+  date?: string | null;
+  body?: string | null;
 }
 
 export type UpdateStatus =

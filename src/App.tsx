@@ -77,8 +77,8 @@ function App() {
           setUpdateInfo({
             version: update.version,
             currentVersion: update.currentVersion,
-            date: update.date,
-            body: update.body,
+            date: update.date ?? null,
+            body: update.body ?? null,
           });
           setStatus('available');
 
