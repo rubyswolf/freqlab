@@ -344,6 +344,8 @@ pub async fn send_to_claude(
     project_name: String,
     description: String,
     message: String,
+    model: Option<String>,
+    custom_instructions: Option<String>,
     window: tauri::Window,
 ) -> Result<ClaudeResponse, String> {
     // Ensure git is initialized for this project (handles existing projects)
@@ -384,11 +386,27 @@ pub async fn send_to_claude(
         "15".to_string(),
     ];
 
+    // Add model flag if specified
+    if let Some(ref m) = model {
+        args.push("--model".to_string());
+        args.push(m.clone());
+    }
+
     // Only add system prompt on first message (new session)
     // For resumed sessions, Claude already has the context
     if existing_session.is_none() {
+        // Build full system prompt with custom instructions if provided
+        let full_context = if let Some(ref instructions) = custom_instructions {
+            if !instructions.trim().is_empty() {
+                format!("{}\n\n--- USER PREFERENCES ---\n{}", context, instructions.trim())
+            } else {
+                context
+            }
+        } else {
+            context
+        };
         args.push("--append-system-prompt".to_string());
-        args.push(context);
+        args.push(full_context);
     }
 
     // Add resume flag if we have an existing session

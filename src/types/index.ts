@@ -43,8 +43,12 @@ export interface AudioSettings {
 
 export type ChatStyle = 'minimal' | 'conversational';
 
+export type ClaudeModel = 'haiku' | 'sonnet' | 'opus';
+
 export interface AISettings {
   chatStyle: ChatStyle;
+  model: ClaudeModel;
+  customInstructions: string;
 }
 
 export interface AppConfig {
