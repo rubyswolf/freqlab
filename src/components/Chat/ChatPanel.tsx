@@ -441,16 +441,21 @@ export function ChatPanel({ project, onVersionChange }: ChatPanelProps) {
       setMessages(messagesWithAssistant);
       messagesRef.current = messagesWithAssistant; // Keep ref in sync immediately
 
-      // Save assistant message explicitly (in case component unmounts)
+      // Update active version IMMEDIATELY if this created a new version
+      // This must happen before any await to prevent a render with stale activeVersion
+      // (which would cause the new message to appear greyed out momentarily)
+      if (nextVersion) {
+        setActiveVersion(nextVersion);
+      }
+
+      // Now persist to disk (async operations after state is consistent)
       await invoke('save_chat_history', {
         projectPath: project.path,
         messages: messagesWithAssistant,
       });
 
-      // Update active version if this created a new version (AFTER saving messages)
+      // Persist activeVersion to disk so it survives reload
       if (nextVersion) {
-        setActiveVersion(nextVersion);
-        // Persist activeVersion to disk so it survives reload
         await invoke('update_active_version', {
           projectPath: project.path,
           version: nextVersion,
