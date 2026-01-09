@@ -35,8 +35,8 @@ const HOST_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// A loaded CLAP plugin instance
 pub struct PluginInstance {
-    /// The loaded dynamic library (must be kept alive)
-    _library: Library,
+    /// The loaded dynamic library (must be kept alive, Option for explicit drop)
+    _library: Option<Library>,
     /// Plugin entry point
     entry: *const ClapPluginEntry,
     /// Plugin factory (kept alive, not directly read)
@@ -359,7 +359,7 @@ impl PluginInstance {
         }
 
         let mut host_instance = Self {
-            _library: library,
+            _library: Some(library),
             entry,
             _factory: factory,
             plugin,
@@ -1228,11 +1228,22 @@ impl Drop for PluginInstance {
             unsafe { deinit() };
         }
 
-        // Clean up temp bundle (after library is dropped)
-        // Note: The library (_library field) will be dropped automatically after this
-        // The temp bundle can be deleted on next load, so we just log here
-        if let Some(ref temp_path) = self.temp_bundle_path {
-            log::info!("Temp bundle at {:?} will be cleaned up on next load", temp_path);
+        // Explicitly drop the library BEFORE deleting temp bundle
+        // This ensures the dylib is fully unloaded and file handles are released
+        if let Some(library) = self._library.take() {
+            log::info!("Dropping library handle...");
+            drop(library);
+            // Small delay to ensure OS releases file handles
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+
+        // Now delete the temp bundle immediately
+        if let Some(temp_path) = self.temp_bundle_path.take() {
+            log::info!("Deleting temp bundle: {:?}", temp_path);
+            match std::fs::remove_dir_all(&temp_path) {
+                Ok(_) => log::info!("Temp bundle deleted successfully"),
+                Err(e) => log::warn!("Failed to delete temp bundle {:?}: {}", temp_path, e),
+            }
         }
 
         log::info!("Plugin unloaded");
