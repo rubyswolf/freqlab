@@ -160,8 +160,8 @@ export function NewProjectModal({ isOpen, onClose, onSubmit }: NewProjectModalPr
     if (!value) return 'Name is required';
     if (value.length > 50) return 'Name too long (max 50 chars)';
     if (!/^[a-z]/.test(value)) return 'Must start with a lowercase letter';
-    if (!/^[a-z][a-z0-9_-]*$/.test(value)) {
-      return 'Only lowercase letters, numbers, hyphens, and underscores allowed';
+    if (!/^[a-z][a-z0-9_]*$/.test(value)) {
+      return 'Only lowercase letters, numbers, and underscores allowed';
     }
     return null;
   };
@@ -235,16 +235,16 @@ export function NewProjectModal({ isOpen, onClose, onSubmit }: NewProjectModalPr
   const handleNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     // Sanitize input to valid plugin name:
     // 1. Lowercase everything
-    // 2. Replace spaces with hyphens (for readability)
+    // 2. Replace spaces and hyphens with underscores
     // 3. Remove any remaining invalid characters
-    // 4. Collapse multiple hyphens into one
-    // 5. Remove leading/trailing hyphens
+    // 4. Collapse multiple underscores into one
+    // 5. Remove leading/trailing underscores
     const value = e.target.value
       .toLowerCase()
-      .replace(/\s+/g, '-')           // spaces → hyphens
-      .replace(/[^a-z0-9_-]/g, '')    // remove invalid chars
-      .replace(/-+/g, '-')            // collapse multiple hyphens
-      .replace(/^-|-$/g, '');         // trim leading/trailing hyphens
+      .replace(/[\s-]+/g, '_')        // spaces/hyphens → underscores
+      .replace(/[^a-z0-9_]/g, '')     // remove invalid chars
+      .replace(/_+/g, '_')            // collapse multiple underscores
+      .replace(/^_|_$/g, '');         // trim leading/trailing underscores
     setName(value);
     setError(null);
   };
@@ -273,12 +273,12 @@ export function NewProjectModal({ isOpen, onClose, onSubmit }: NewProjectModalPr
                 id="name"
                 value={name}
                 onChange={handleNameChange}
-                placeholder="my-plugin"
+                placeholder="my_plugin"
                 className="w-full px-4 py-2.5 bg-bg-primary border border-border rounded-xl text-text-primary placeholder-text-muted focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-colors"
                 autoFocus
               />
               <p className="mt-1.5 text-xs text-text-muted">
-                Lowercase letters, numbers, hyphens, and underscores only
+                Lowercase letters, numbers, and underscores only
               </p>
             </div>
 
