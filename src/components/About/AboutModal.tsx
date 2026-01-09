@@ -250,7 +250,7 @@ export function AboutModal({ isOpen, onClose }: AboutModalProps) {
                 </div>
 
                 {/* Version */}
-                <p className="text-text-muted text-xs">Version 1.1.3</p>
+                <p className="text-text-muted text-xs">Version 0.1.4</p>
             </div>
         </Modal>
     )
