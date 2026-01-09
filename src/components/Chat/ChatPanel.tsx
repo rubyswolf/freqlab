@@ -163,7 +163,8 @@ export function ChatPanel({ project, onVersionChange }: ChatPanelProps) {
   const { addLine, clear } = useProjectOutput(project.path);
   const { pendingMessage, clearPendingMessage } = useChatStore();
   const { isClaudeBusy, setClaudeBusy, clearClaudeBusy, isProjectBusy, getClaudeStartTime } = useProjectBusyStore();
-  const chatStyle = useSettingsStore((state) => state.aiSettings.chatStyle);
+  const aiSettings = useSettingsStore((state) => state.aiSettings);
+  const chatStyle = aiSettings.chatStyle;
   // Track chat style for current processing session (initialized from setting, captured when chat starts)
   const activeChatStyleRef = useRef(chatStyle);
 
@@ -513,6 +514,8 @@ export function ChatPanel({ project, onVersionChange }: ChatPanelProps) {
         projectName: project.name,
         description: project.description,
         message: messageForClaude,
+        model: aiSettings.model,
+        customInstructions: aiSettings.customInstructions,
       });
 
       // Calculate next version number if this response has a commit (files were changed)

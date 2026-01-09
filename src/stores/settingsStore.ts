@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { AppConfig, DawPaths, CustomThemeColors, AudioSettings, AISettings, ChatStyle } from '../types';
+import type { AppConfig, DawPaths, CustomThemeColors, AudioSettings, AISettings, ChatStyle, ClaudeModel } from '../types';
 
 const defaultDawPaths: DawPaths = {
   reaper: { vst3: '~/Library/Audio/Plug-Ins/VST3', clap: '~/Library/Audio/Plug-Ins/CLAP' },
@@ -27,6 +27,8 @@ const defaultAudioSettings: AudioSettings = {
 
 const defaultAISettings: AISettings = {
   chatStyle: 'conversational',
+  model: 'opus',
+  customInstructions: '',
 };
 
 interface SettingsState extends AppConfig {
@@ -42,6 +44,8 @@ interface SettingsState extends AppConfig {
   aiSettings: AISettings;
   setAISettings: (settings: AISettings) => void;
   setChatStyle: (style: ChatStyle) => void;
+  setModel: (model: ClaudeModel) => void;
+  setCustomInstructions: (instructions: string) => void;
   // Other settings
   setSetupComplete: (complete: boolean) => void;
   setWorkspacePath: (path: string) => void;
@@ -98,6 +102,14 @@ export const useSettingsStore = create<SettingsState>()(
         set((state) => ({
           aiSettings: { ...state.aiSettings, chatStyle: style },
         })),
+      setModel: (model) =>
+        set((state) => ({
+          aiSettings: { ...state.aiSettings, model },
+        })),
+      setCustomInstructions: (instructions) =>
+        set((state) => ({
+          aiSettings: { ...state.aiSettings, customInstructions: instructions },
+        })),
 
       setSetupComplete: (complete) => set({ setupComplete: complete }),
       setWorkspacePath: (path) => set({ workspacePath: path }),
@@ -127,6 +139,32 @@ export const useSettingsStore = create<SettingsState>()(
     }),
     {
       name: 'freqlab-settings',
+      // Merge persisted state with defaults to handle new fields for existing users
+      merge: (persistedState, currentState) => {
+        const persisted = persistedState as Partial<SettingsState>;
+        return {
+          ...currentState,
+          ...persisted,
+          // Deep merge aiSettings to pick up new fields (model, customInstructions)
+          aiSettings: {
+            ...currentState.aiSettings,
+            ...(persisted.aiSettings || {}),
+          },
+          // Deep merge other nested objects
+          audioSettings: {
+            ...currentState.audioSettings,
+            ...(persisted.audioSettings || {}),
+          },
+          dawPaths: {
+            ...currentState.dawPaths,
+            ...(persisted.dawPaths || {}),
+          },
+          customColors: {
+            ...currentState.customColors,
+            ...(persisted.customColors || {}),
+          },
+        };
+      },
     }
   )
 );
