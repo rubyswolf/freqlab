@@ -65,7 +65,7 @@ pub unsafe fn get_gui_size(plugin: *const ClapPlugin) -> Option<(u32, u32)> {
 #[cfg(target_os = "macos")]
 mod macos {
     use super::*;
-    use objc2::rc::Retained;
+    use objc2::rc::{autoreleasepool, Retained};
     use objc2::{MainThreadMarker, MainThreadOnly};
     use objc2_app_kit::{
         NSApplication, NSApplicationActivationPolicy, NSBackingStoreType, NSColor, NSWindow,
@@ -124,17 +124,20 @@ mod macos {
     unsafe impl Send for EditorWindowContext {}
 
     /// Worker function called on main thread
+    /// Wrapped in autoreleasepool to ensure Cocoa temporaries are cleaned up
     extern "C" fn create_editor_window_on_main(context: *mut std::ffi::c_void) {
-        let ctx = unsafe { &mut *(context as *mut EditorWindowContext) };
+        autoreleasepool(|_pool| {
+            let ctx = unsafe { &mut *(context as *mut EditorWindowContext) };
 
-        log::info!("create_editor_window_on_main: Running on main thread");
+            log::info!("create_editor_window_on_main: Running on main thread");
 
-        ctx.result = Some(unsafe { create_editor_window_inner(ctx.plugin, &ctx.title, ctx.position) });
+            ctx.result = Some(unsafe { create_editor_window_inner(ctx.plugin, &ctx.title, ctx.position) });
 
-        log::info!(
-            "create_editor_window_on_main: Complete (success={})",
-            ctx.result.as_ref().map(|r| r.is_ok()).unwrap_or(false)
-        );
+            log::info!(
+                "create_editor_window_on_main: Complete (success={})",
+                ctx.result.as_ref().map(|r| r.is_ok()).unwrap_or(false)
+            );
+        });
     }
 
     /// Create a native NSWindow for the plugin editor at a specific position
@@ -362,11 +365,14 @@ mod macos {
     unsafe impl Send for DestroyWindowContext {}
 
     /// Worker function for destroy on main thread
+    /// Wrapped in autoreleasepool to ensure Cocoa temporaries are cleaned up
     extern "C" fn destroy_editor_window_on_main(context: *mut std::ffi::c_void) {
-        let ctx = unsafe { &*(context as *const DestroyWindowContext) };
-        unsafe {
-            destroy_editor_window_inner(ctx.plugin, ctx.window);
-        }
+        autoreleasepool(|_pool| {
+            let ctx = unsafe { &*(context as *const DestroyWindowContext) };
+            unsafe {
+                destroy_editor_window_inner(ctx.plugin, ctx.window);
+            }
+        });
     }
 
     /// Close and destroy the editor window

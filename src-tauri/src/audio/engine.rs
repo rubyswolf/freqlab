@@ -4,6 +4,7 @@ use cpal::traits::{DeviceTrait, StreamTrait};
 use parking_lot::{Mutex, RwLock};
 use rubato::{FftFixedInOut, Resampler};
 use serde::{Deserialize, Serialize};
+use std::collections::VecDeque;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU8, Ordering};
 use std::sync::Arc;
@@ -60,6 +61,9 @@ const CROSSFADE_SAMPLES: u32 = 4410;
 /// Number of samples in waveform display buffer
 const WAVEFORM_SAMPLES: usize = 256;
 
+/// Maximum output buffer size to prevent unbounded growth (about 1 second at 48kHz)
+const MAX_OUTPUT_BUFFER_SIZE: usize = 48000;
+
 /// Live input resampler for handling sample rate mismatch
 struct LiveInputResampler {
     resampler: FftFixedInOut<f32>,
@@ -74,9 +78,9 @@ struct LiveInputResampler {
     accum_left: Vec<f32>,
     /// Accumulated input samples (right channel)
     accum_right: Vec<f32>,
-    /// Accumulated output samples ready to consume
-    output_ready_left: Vec<f32>,
-    output_ready_right: Vec<f32>,
+    /// Accumulated output samples ready to consume (VecDeque for O(1) front removal)
+    output_ready_left: VecDeque<f32>,
+    output_ready_right: VecDeque<f32>,
 }
 
 impl LiveInputResampler {
@@ -108,8 +112,8 @@ impl LiveInputResampler {
             output_frames,
             accum_left: Vec::with_capacity(input_frames_needed * 2),
             accum_right: Vec::with_capacity(input_frames_needed * 2),
-            output_ready_left: Vec::with_capacity(output_frames * 2),
-            output_ready_right: Vec::with_capacity(output_frames * 2),
+            output_ready_left: VecDeque::with_capacity(output_frames * 2),
+            output_ready_right: VecDeque::with_capacity(output_frames * 2),
         })
     }
 
@@ -147,8 +151,14 @@ impl LiveInputResampler {
         match self.resampler.process_into_buffer(&input_buffers, &mut output_buffers, None) {
             Ok((_, output_len)) => {
                 // Add resampled output to ready buffer
-                self.output_ready_left.extend_from_slice(&self.output_buffer_left[..output_len]);
-                self.output_ready_right.extend_from_slice(&self.output_buffer_right[..output_len]);
+                self.output_ready_left.extend(self.output_buffer_left[..output_len].iter().copied());
+                self.output_ready_right.extend(self.output_buffer_right[..output_len].iter().copied());
+
+                // Prevent unbounded buffer growth - drop oldest samples if buffer exceeds max
+                while self.output_ready_left.len() > MAX_OUTPUT_BUFFER_SIZE {
+                    self.output_ready_left.pop_front();
+                    self.output_ready_right.pop_front();
+                }
                 true
             }
             Err(e) => {
@@ -159,13 +169,11 @@ impl LiveInputResampler {
     }
 
     /// Get the next resampled sample, or None if buffer is empty
+    /// Uses VecDeque::pop_front() for O(1) removal instead of Vec::remove(0) which was O(N)
     fn pop_output(&mut self) -> Option<StereoSample> {
-        if self.output_ready_left.is_empty() {
-            None
-        } else {
-            let left = self.output_ready_left.remove(0);
-            let right = self.output_ready_right.remove(0);
-            Some(StereoSample::new(left, right))
+        match (self.output_ready_left.pop_front(), self.output_ready_right.pop_front()) {
+            (Some(left), Some(right)) => Some(StereoSample::new(left, right)),
+            _ => None,
         }
     }
 

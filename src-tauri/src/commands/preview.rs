@@ -707,6 +707,9 @@ pub fn plugin_reload(
     // Close editor if open
     handle.close_plugin_editor();
 
+    // Small delay to ensure editor window is fully closed
+    std::thread::sleep(std::time::Duration::from_millis(50));
+
     // Unload and reload the plugin
     handle.unload_plugin();
 
