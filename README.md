@@ -96,7 +96,7 @@ Choose your starting point:
 -   **Claude Code CLI** — requires an active Anthropic subscription
 
 > [!NOTE]
-> freqlab on-boarding checks these on first launch. It also gudes the user through the setup and does what it can through the UI alone.
+> freqlab on-boarding checks these on first launch. It also guides the user through the setup and does what it can through the UI alone.
 
 ---
 
@@ -133,7 +133,8 @@ xattr -cr /path/to/YourPlugin.vst3
 
 ### Code Review
 
-Claude generates the plugin code. While templates include safety limiters, always review generated code before distributing. You're generating rust, so make sure to understand what it's doing!
+> [!CAUTION]
+> Claude generates the plugin code. While templates include safety limiters, always review generated code before distributing. You're generating rust, so make sure to understand what it's doing!
 
 ---
 
