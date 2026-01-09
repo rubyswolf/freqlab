@@ -27,7 +27,9 @@ src/                          # React frontend
     Chat/                     # ChatPanel, ChatMessage, ChatInput, AttachmentPreview
     Common/                   # Button, Modal, Spinner, Toast
     Layout/                   # MainLayout, Header, Sidebar, OutputPanel
-    Preview/                  # PreviewPanel (audio engine UI)
+    Preview/                  # PreviewPanel, LevelMeters, SpectrumAnalyzer, WaveformDisplay,
+                              # LiveInputControls, PianoKeyboard, PatternControls, MidiFileControls,
+                              # MidiLiveControls, InstrumentControls, FrequencySelector
     Projects/                 # ProjectList, ProjectCard, NewProjectModal
     Publish/                  # PublishModal (copy to DAW folders)
     Settings/                 # SettingsModal, AudioSettings, BrandingSettings, DawPathsSettings, DevSettings, UpdateSettings, ThemePicker
@@ -71,6 +73,15 @@ src-tauri/                    # Rust backend
       buffer.rs               # Ring buffer for audio data
       signals.rs              # Test signal generation (sine, noise, sweep, etc.)
       samples.rs              # Sample file playback (symphonia)
+      input.rs                # Live audio input capture
+      spectrum.rs             # Real-time FFT spectrum analysis
+      midi/
+        mod.rs                # MIDI module exports
+        events.rs             # MIDI event types and lock-free queue
+        device.rs             # MIDI hardware device input (midir)
+        patterns.rs           # MIDI pattern playback (sequencer)
+        player.rs             # MIDI file/pattern player with tempo control
+        file.rs               # MIDI file parsing (midly)
       plugin/
         mod.rs                # Plugin hosting module
         clap_host.rs          # CLAP host implementation
@@ -105,12 +116,18 @@ src-tauri/                    # Rust backend
 8. **Audio Preview** - CLAP plugin hosting with hot reload
 9. **Test Signals** - Sine, noise, sweep, impulse, chirp generators
 10. **Sample Playback** - Load audio files as input source
-11. **Level Metering** - Real-time output level display
-12. **Settings Panel** - Audio device, branding, DAW paths, theme customization
-13. **Publish** - Copy built plugins to DAW plugin folders
-14. **Share** - Export/import projects as zip archives
-15. **Attachments** - Attach files to chat messages
-16. **Auto-Updates** - Check for updates on launch, download and install from GitHub Releases
+11. **Live Audio Input** - Route audio from input devices through plugins
+12. **Level Metering** - Real-time input/output level display with dB values
+13. **Spectrum Analyzer** - Real-time FFT frequency visualization
+14. **Waveform Display** - Time-domain audio visualization
+15. **MIDI Support** - Hardware device input, file playback, pattern sequencer
+16. **Piano Keyboard** - On-screen keyboard for testing instrument plugins
+17. **Plugin Editor Window** - Floating window with position memory across hot reloads
+18. **Settings Panel** - Audio device, branding, DAW paths, theme customization
+19. **Publish** - Copy built plugins to DAW plugin folders
+20. **Share** - Export/import projects as zip archives
+21. **Attachments** - Attach files to chat messages
+22. **Auto-Updates** - Check for updates on launch, download and install from GitHub Releases
 
 ### Data Flow
 
@@ -136,9 +153,17 @@ src-tauri/                    # Rust backend
 
 **Audio Preview:**
 1. PreviewPanel initializes audio engine
-2. User selects input source (signal/sample)
+2. User selects input source (signal/sample/live input)
 3. Engine loads CLAP plugin, processes audio in real-time
 4. File watcher triggers hot reload on changes
+5. Spectrum analyzer and waveform display update in real-time
+
+**MIDI for Instruments:**
+1. User selects MIDI source (keyboard/pattern/file/hardware device)
+2. MIDI events queued via lock-free ring buffer
+3. Plugin receives NoteOn/NoteOff/CC events during process()
+4. Piano keyboard or pattern sequencer triggers notes
+5. Hardware MIDI devices connected via midir
 
 ---
 
@@ -225,8 +250,22 @@ interface AudioSettings {
 - `set_signal_type(signal_type, params)` → `()`
 - `load_sample(sample_path)` → `()`
 - `start_playback()` / `stop_playback()` → `()`
-- `get_output_levels()` → `OutputLevels`
+- `get_output_levels()` → `OutputLevels` (includes spectrum, waveform, dB values)
 - `list_audio_devices()` → `Vec<AudioDevice>`
+- `get_input_devices()` → `Vec<AudioDeviceInfo>`
+- `preview_set_live_input(device_name, chunk_size)` → `()`
+- `plugin_open_editor()` / `plugin_close_editor()` → `()`
+
+### MIDI (in commands/preview.rs)
+- `midi_note_on(note, velocity)` / `midi_note_off(note)` → `()`
+- `midi_cc(controller, value)` → `()`
+- `midi_pitch_bend(value)` → `()`
+- `set_midi_pattern(pattern, tempo, loop)` → `()`
+- `start_midi_pattern()` / `stop_midi_pattern()` → `()`
+- `load_midi_file(path)` → `MidiFileInfo`
+- `start_midi_file()` / `stop_midi_file()` → `()`
+- `list_midi_devices()` → `Vec<MidiDeviceInfo>`
+- `connect_midi_device(index)` / `disconnect_midi_device()` → `()`
 
 ### Publishing
 - `publish_plugin(project_path, version, daw, format)` → copies to DAW folder
@@ -456,17 +495,26 @@ WebView plugins use a forked `nih-plug-webview` ([github.com/jamesontucker/nih-p
 
 The audio preview system uses a global singleton engine (`src-tauri/src/audio/engine.rs`) with:
 
-1. **Input Sources**: Test signals (sine, noise, sweep, etc.) or loaded samples
+1. **Input Sources**: Test signals, loaded samples, or live audio input
 2. **CLAP Host**: Loads and processes CLAP plugins in real-time
-3. **Hot Reload**: File watcher triggers plugin reload on changes
-4. **Output**: cpal device with configurable sample rate and buffer size
+3. **MIDI**: Lock-free event queue for note/CC events from multiple sources
+4. **Hot Reload**: File watcher triggers plugin reload on changes
+5. **Analysis**: Real-time FFT spectrum and waveform capture
+6. **Output**: cpal device with configurable sample rate and buffer size
 
 **Key Files:**
-- `audio/engine.rs` - Main audio thread, buffer management
-- `audio/plugin/clap_host.rs` - CLAP plugin loading and parameter control
+- `audio/engine.rs` - Main audio thread, buffer management, metering
+- `audio/plugin/clap_host.rs` - CLAP plugin loading, parameter control, MIDI routing
 - `audio/plugin/editor.rs` - Plugin editor window (Objective-C on macOS)
 - `audio/signals.rs` - Test signal generators
 - `audio/samples.rs` - Sample file loading (symphonia)
+- `audio/input.rs` - Live audio input capture
+- `audio/spectrum.rs` - Real-time FFT analysis
+- `audio/midi/events.rs` - MIDI event types and lock-free queue
+- `audio/midi/device.rs` - Hardware MIDI device input (midir)
+- `audio/midi/patterns.rs` - MIDI pattern/sequencer playback
+- `audio/midi/player.rs` - MIDI file player with tempo control
+- `audio/midi/file.rs` - MIDI file parsing (midly)
 
 ---
 
@@ -483,11 +531,17 @@ The audio preview system uses a global singleton engine (`src-tauri/src/audio/en
 - `symphonia` - Audio format decoding (WAV, MP3, AAC)
 - `libloading` - Dynamic library loading (CLAP plugins)
 - `notify` - File watching for hot reload
+- `rustfft` - Real-time FFT for spectrum analysis
+
+**MIDI:**
+- `midir` - Cross-platform MIDI device access
+- `midly` - MIDI file parsing
 
 **Plugins:**
 - `tauri-plugin-shell` - Shell command execution
 - `tauri-plugin-dialog` - File dialogs
 - `tauri-plugin-log` - Logging
+- `tauri-plugin-updater` - Auto-update from GitHub Releases
 
 **macOS:**
 - `objc2`, `objc2-foundation`, `objc2-app-kit` - Native plugin editor windows

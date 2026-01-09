@@ -25,9 +25,9 @@ Describe → Build → Preview → Iterate
 ```
 
 1. Create a plugin project and choose a template
-2. Chat to describe what you want, claude code writes the Rust code
+2. Chat to describe what you want, Claude Code writes the Rust code
 3. One-click build compiles your plugin
-4. Hot reload lets you hear changes instantly and experiement with the preview panel (send input singals).
+4. Hot reload lets you hear changes instantly—test with signals, samples, live input, or MIDI
 5. Revert to any version if something breaks
 6. Publish directly to your DAW
 
@@ -46,12 +46,25 @@ Describe → Build → Preview → Iterate
 
 ### Audio Preview
 
-| Feature             | Description                                                      |
-| ------------------- | ---------------------------------------------------------------- |
-| **Hot reload**      | Plugin reloads automatically when code changes—no restart needed |
-| **Test signals**    | Built-in sine, noise, sweep, impulse, and chirp generators       |
-| **Sample playback** | Load WAV, MP3, or AAC files as input                             |
-| **Level metering**  | Real-time output monitoring                                      |
+| Feature               | Description                                                      |
+| --------------------- | ---------------------------------------------------------------- |
+| **Hot reload**        | Plugin reloads automatically when code changes—no restart needed |
+| **Test signals**      | Built-in sine, noise, sweep, impulse, and chirp generators       |
+| **Sample playback**   | Load WAV, MP3, or AAC files as input                             |
+| **Live audio input**  | Route audio from your interface through your plugin              |
+| **Level metering**    | Real-time input/output monitoring with dB display                |
+| **Spectrum analyzer** | Real-time FFT frequency visualization                            |
+| **Waveform display**  | Time-domain audio visualization                                  |
+| **Plugin editor**     | Open the plugin's GUI in a floating window                       |
+
+### MIDI for Instruments
+
+| Feature                | Description                                                 |
+| ---------------------- | ----------------------------------------------------------- |
+| **Piano keyboard**     | On-screen keyboard to play notes and test your instrument   |
+| **Pattern sequencer**  | Create and loop MIDI patterns with adjustable tempo         |
+| **MIDI file playback** | Load and play standard MIDI files through your plugin       |
+| **Hardware MIDI**      | Connect your MIDI keyboard or controller                    |
 
 ### Build System
 
