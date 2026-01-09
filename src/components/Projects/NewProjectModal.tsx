@@ -33,7 +33,7 @@ interface UIFrameworkOption {
 const UI_FRAMEWORK_OPTIONS: UIFrameworkOption[] = [
   {
     id: 'webview',
-    name: 'Advanced UI',
+    name: 'Advanced UI (WebView)',
     tagline: 'Maximum visual flexibility',
     description: 'Best for plugins where appearance and user experience are top priorities.',
     performance: 2.5,
@@ -44,7 +44,7 @@ const UI_FRAMEWORK_OPTIONS: UIFrameworkOption[] = [
   },
   {
     id: 'egui',
-    name: 'Simple UI',
+    name: 'Simple UI (egui)',
     tagline: 'Balanced performance and looks',
     description: 'Good middle ground between visual polish and CPU efficiency.',
     performance: 4.5,
