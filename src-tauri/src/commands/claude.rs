@@ -443,10 +443,11 @@ pub async fn send_to_claude(
     let mut last_substantial_content: Option<String> = None;  // >10 chars, likely a real response
     let mut last_nonempty_content: Option<String> = None;     // Fallback for short but valid responses
 
-    // Timeout settings: if no output for 3 minutes, consider it stalled
-    let read_timeout = Duration::from_secs(180);
+    // Timeout settings: if no output for 15 minutes, consider it potentially stalled
+    // This is a safety net for completely hung processes - the frontend has its own 30-min timeout
+    let read_timeout = Duration::from_secs(900); // 15 minutes
     let mut consecutive_timeouts = 0;
-    let max_consecutive_timeouts = 2; // Kill after 6 minutes of no output
+    let max_consecutive_timeouts = 2; // Kill after 30 minutes of no output
 
     // Read stdout and stderr concurrently with timeout protection
     loop {
@@ -523,18 +524,19 @@ pub async fn send_to_claude(
             Err(_) => {
                 // Timeout occurred - no output for read_timeout duration
                 consecutive_timeouts += 1;
+                let timeout_mins = read_timeout.as_secs() / 60;
                 eprintln!("[WARN] Claude CLI read timeout ({}/{})", consecutive_timeouts, max_consecutive_timeouts);
 
                 let _ = window.emit("claude-stream", ClaudeStreamEvent::Text {
                     project_path: project_path.clone(),
-                    content: format!("[Warning] No output for {} seconds...", read_timeout.as_secs()),
+                    content: format!("[Warning] No output for {} minutes...", timeout_mins),
                 });
 
                 if consecutive_timeouts >= max_consecutive_timeouts {
                     eprintln!("[ERROR] Claude CLI appears stalled, terminating process");
                     let _ = window.emit("claude-stream", ClaudeStreamEvent::Error {
                         project_path: project_path.clone(),
-                        message: "Claude CLI stalled (no output for too long). Session terminated.".to_string(),
+                        message: "Claude CLI stalled (no output for 30 minutes). Session terminated.".to_string(),
                     });
                     // Kill the process
                     let _ = child.kill().await;
