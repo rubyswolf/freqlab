@@ -3,10 +3,13 @@ import { create } from 'zustand';
 interface ProjectBusyState {
   // Track which projects are busy with Claude (supports multiple concurrent)
   claudeBusyPaths: Set<string>;
+  // Track when each project started being busy (for elapsed time display)
+  claudeStartTimes: Map<string, number>;
   setClaudeBusy: (path: string) => void;
   clearClaudeBusy: (path: string) => void;
   isClaudeBusy: (path: string) => boolean;
   getClaudeBusyPaths: () => string[];
+  getClaudeStartTime: (path: string) => number | undefined;
 
   // Track which project is building (only one at a time)
   buildingPath: string | null;
@@ -25,17 +28,24 @@ interface ProjectBusyState {
 
 export const useProjectBusyStore = create<ProjectBusyState>((set, get) => ({
   claudeBusyPaths: new Set<string>(),
+  claudeStartTimes: new Map<string, number>(),
 
   setClaudeBusy: (path) => set((state) => {
     const newPaths = new Set(state.claudeBusyPaths);
     newPaths.add(path);
-    return { claudeBusyPaths: newPaths };
+    const newStartTimes = new Map(state.claudeStartTimes);
+    if (!newStartTimes.has(path)) {
+      newStartTimes.set(path, Date.now());
+    }
+    return { claudeBusyPaths: newPaths, claudeStartTimes: newStartTimes };
   }),
 
   clearClaudeBusy: (path) => set((state) => {
     const newPaths = new Set(state.claudeBusyPaths);
     newPaths.delete(path);
-    return { claudeBusyPaths: newPaths };
+    const newStartTimes = new Map(state.claudeStartTimes);
+    newStartTimes.delete(path);
+    return { claudeBusyPaths: newPaths, claudeStartTimes: newStartTimes };
   }),
 
   isClaudeBusy: (path) => {
@@ -44,6 +54,10 @@ export const useProjectBusyStore = create<ProjectBusyState>((set, get) => ({
 
   getClaudeBusyPaths: () => {
     return Array.from(get().claudeBusyPaths);
+  },
+
+  getClaudeStartTime: (path) => {
+    return get().claudeStartTimes.get(path);
   },
 
   buildingPath: null,

@@ -49,6 +49,17 @@ export function ChatPanel({ project, onVersionChange }: ChatPanelProps) {
   const [activeVersion, setActiveVersion] = useState<number | null>(null);
   const [streamingContent, setStreamingContent] = useState('');
   const [thinkingPhraseIndex, setThinkingPhraseIndex] = useState(0);
+  // Initialize elapsed time from store to prevent "0s flash" when switching to a loading project
+  const [elapsedSeconds, setElapsedSeconds] = useState(() => {
+    const store = useProjectBusyStore.getState();
+    if (store.isClaudeBusy(project.path)) {
+      const startTime = store.getClaudeStartTime(project.path);
+      if (startTime) {
+        return Math.floor((Date.now() - startTime) / 1000);
+      }
+    }
+    return 0;
+  });
   const [isHistoryLoaded, setIsHistoryLoaded] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesRef = useRef<ChatMessageType[]>([]);
@@ -58,7 +69,7 @@ export function ChatPanel({ project, onVersionChange }: ChatPanelProps) {
   const streamingContentRef = useRef('');
   const { addLine, setActive, clear } = useProjectOutput(project.path);
   const { pendingMessage, clearPendingMessage } = useChatStore();
-  const { isClaudeBusy, setClaudeBusy, clearClaudeBusy, isProjectBusy } = useProjectBusyStore();
+  const { isClaudeBusy, setClaudeBusy, clearClaudeBusy, isProjectBusy, getClaudeStartTime } = useProjectBusyStore();
 
   // Check if THIS project is currently busy with Claude
   const isLoading = isClaudeBusy(project.path);
@@ -221,6 +232,27 @@ export function ChatPanel({ project, onVersionChange }: ChatPanelProps) {
     }, 10000);
     return () => clearInterval(interval);
   }, [isLoading]);
+
+  // Track elapsed time while loading (start time stored in Zustand)
+  useEffect(() => {
+    if (!isLoading) {
+      setElapsedSeconds(0);
+      return;
+    }
+
+    // Calculate elapsed from start time stored in the busy store
+    const updateElapsed = () => {
+      const startTime = getClaudeStartTime(project.path);
+      if (startTime) {
+        setElapsedSeconds(Math.floor((Date.now() - startTime) / 1000));
+      }
+    };
+
+    // Update immediately, then every second
+    updateElapsed();
+    const interval = setInterval(updateElapsed, 1000);
+    return () => clearInterval(interval);
+  }, [isLoading, project.path, getClaudeStartTime]);
 
   const handleSend = useCallback(async (content: string, attachments?: PendingAttachment[]) => {
     // Use ref for current messages (avoids stale closure issues)
@@ -546,6 +578,11 @@ export function ChatPanel({ project, onVersionChange }: ChatPanelProps) {
                       <div className="w-1.5 h-5 rounded-full bg-accent animate-[pulse_1s_ease-in-out_infinite]" style={{ animationDelay: '450ms' }} />
                     </div>
                     <span className="text-sm transition-all duration-300">{THINKING_PHRASES[thinkingPhraseIndex]}</span>
+                    <span className="text-xs text-text-muted tabular-nums">
+                      {elapsedSeconds < 60
+                        ? `${elapsedSeconds}s`
+                        : `${Math.floor(elapsedSeconds / 60)}m ${elapsedSeconds % 60}s`}
+                    </span>
                   </div>
                   <p className="text-xs text-text-muted mt-2">
                     View progress in the output panel below
