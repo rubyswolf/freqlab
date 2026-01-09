@@ -1,15 +1,142 @@
-import { useEffect } from 'react';
+import { useEffect, useState, useRef, useCallback, type ReactNode } from 'react';
+import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { usePrerequisites } from '../../hooks/usePrerequisites';
 import { Spinner } from '../Common/Spinner';
+import {
+  checkHomebrew,
+  checkNode,
+  installHomebrew,
+  installNode,
+  installXcode,
+  installRust,
+  installClaudeCli,
+  startClaudeAuth,
+} from '../../lib/tauri';
 import type { CheckResult } from '../../types';
+
+// Helper to wait for an install to complete via events
+// Fixed: Register listener BEFORE starting installation to avoid race condition
+async function waitForInstallComplete(
+  installFn: () => Promise<unknown>,
+  onOutput: (line: string) => void,
+  onActionRequired: (message: string) => void,
+  timeoutMs: number = 10 * 60 * 1000 // 10 minute default timeout
+): Promise<boolean> {
+  return new Promise((resolve) => {
+    let unlisten: UnlistenFn | null = null;
+    let resolved = false;
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+
+    const cleanup = () => {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+        timeoutId = null;
+      }
+      if (unlisten) {
+        unlisten();
+        unlisten = null;
+      }
+    };
+
+    const finish = (success: boolean) => {
+      if (resolved) return;
+      resolved = true;
+      cleanup();
+      resolve(success);
+    };
+
+    // Set timeout
+    timeoutId = setTimeout(() => {
+      onOutput('Installation timed out. Please check your network connection and try again.');
+      finish(false);
+    }, timeoutMs);
+
+    // Register listener FIRST, then start installation
+    listen<InstallEvent>('install-stream', (event) => {
+      const data = event.payload;
+
+      if (data.type === 'output' && data.line) {
+        onOutput(data.line);
+      } else if (data.type === 'action_required' && data.message) {
+        onActionRequired(data.message);
+      } else if (data.type === 'done') {
+        finish(data.success ?? false);
+      } else if (data.type === 'error') {
+        if (data.message) onOutput(`Error: ${data.message}`);
+        finish(false);
+      }
+    }).then((fn) => {
+      unlisten = fn;
+      // Only start installation AFTER listener is registered
+      installFn().catch((err) => {
+        onOutput(`Failed to start: ${err}`);
+        finish(false);
+      });
+    }).catch((err) => {
+      onOutput(`Failed to set up listener: ${err}`);
+      finish(false);
+    });
+  });
+}
+
+// Dev-only: fake failure states for testing UI
+const FAKE_FAILURES: Record<string, CheckResult> = {
+  xcode_cli: { status: 'notinstalled', version: null, message: 'Not installed' },
+  rust: { status: 'notinstalled', version: null, message: 'Not installed' },
+  claude_cli: { status: 'notinstalled', version: null, message: 'Not installed' },
+  claude_auth: { status: 'needsconfig', version: null, message: 'Not authenticated' },
+};
+
+interface InstallEvent {
+  type: 'start' | 'output' | 'done' | 'error' | 'action_required';
+  step?: string;
+  line?: string;
+  success?: boolean;
+  message?: string;
+  action?: string;
+}
+
+interface HelpContent {
+  description: string;
+  instruction: ReactNode;
+  command: string;
+  note: ReactNode;
+}
 
 interface CheckItemProps {
   label: string;
   result: CheckResult | undefined;
   isLoading: boolean;
+  help?: HelpContent;
+  onInstall?: () => void;
+  installLabel?: string;
+  isInstalling?: boolean;
+  installOutput?: string[];
+  actionRequired?: string | null;
 }
 
-function CheckItem({ label, result, isLoading }: CheckItemProps) {
+function CheckItem({
+  label,
+  result,
+  isLoading,
+  help,
+  onInstall,
+  installLabel = 'Install',
+  isInstalling,
+  installOutput = [],
+  actionRequired,
+}: CheckItemProps) {
+  const [manualExpanded, setManualExpanded] = useState(false);
+  const outputRef = useRef<HTMLDivElement>(null);
+  const needsHelp = result && result.status !== 'installed';
+
+  // Auto-scroll output
+  useEffect(() => {
+    if (outputRef.current) {
+      outputRef.current.scrollTop = outputRef.current.scrollHeight;
+    }
+  }, [installOutput]);
+
   const getStatusStyles = () => {
     if (isLoading || !result) {
       return {
@@ -17,6 +144,15 @@ function CheckItem({ label, result, isLoading }: CheckItemProps) {
         border: 'border-border',
         iconBg: 'bg-bg-tertiary',
         iconColor: 'text-text-muted',
+      };
+    }
+
+    if (isInstalling) {
+      return {
+        bg: 'bg-accent-subtle',
+        border: 'border-accent/20',
+        iconBg: 'bg-accent/20',
+        iconColor: 'text-accent',
       };
     }
 
@@ -48,6 +184,10 @@ function CheckItem({ label, result, isLoading }: CheckItemProps) {
   const styles = getStatusStyles();
 
   const StatusIcon = () => {
+    if (isInstalling) {
+      return <Spinner size="sm" className="text-accent" />;
+    }
+
     if (isLoading || !result) {
       return <Spinner size="sm" className="text-text-muted" />;
     }
@@ -75,20 +215,87 @@ function CheckItem({ label, result, isLoading }: CheckItemProps) {
   };
 
   return (
-    <div className={`p-4 rounded-xl ${styles.bg} border ${styles.border} transition-all duration-300`}>
-      <div className="flex items-center gap-3">
-        <div className={`w-8 h-8 rounded-lg ${styles.iconBg} ${styles.iconColor} flex items-center justify-center flex-shrink-0`}>
+    <div className={`p-3 rounded-lg ${styles.bg} border ${styles.border} transition-all duration-300`}>
+      <div className="flex items-center gap-2.5">
+        <div className={`w-7 h-7 rounded-md ${styles.iconBg} ${styles.iconColor} flex items-center justify-center flex-shrink-0`}>
           <StatusIcon />
         </div>
         <div className="flex-1 min-w-0">
-          <div className="font-medium text-text-primary">{label}</div>
-          {result && (
+          <div className="text-sm font-medium text-text-primary">{label}</div>
+          {result && result.status === 'installed' && !isInstalling && (
             <div className="text-xs text-text-muted mt-0.5 truncate">
               {result.version || result.message || ''}
             </div>
           )}
+          {isInstalling && (
+            <div className="text-xs text-accent mt-0.5">Installing...</div>
+          )}
         </div>
+
+        {/* Install button */}
+        {needsHelp && onInstall && !isInstalling && (
+          <button
+            onClick={onInstall}
+            className="px-3 py-1.5 text-xs font-medium bg-accent hover:bg-accent-hover text-white rounded-lg transition-colors"
+          >
+            {installLabel}
+          </button>
+        )}
       </div>
+
+      {/* Action required message */}
+      {actionRequired && (
+        <div className="mt-2 px-2 py-1.5 bg-warning/10 border border-warning/20 rounded-md flex items-center gap-2">
+          <svg className="w-3.5 h-3.5 text-warning flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122" />
+          </svg>
+          <span className="text-[11px] text-warning font-medium">{actionRequired}</span>
+        </div>
+      )}
+
+      {/* Installation output */}
+      {installOutput.length > 0 && (
+        <div
+          ref={outputRef}
+          className="mt-2 p-1.5 bg-bg-primary rounded-md max-h-20 overflow-y-auto font-mono text-[10px] text-text-muted"
+        >
+          {installOutput.map((line, i) => (
+            <div key={i} className="whitespace-pre-wrap break-all">{line}</div>
+          ))}
+        </div>
+      )}
+
+      {/* Collapsible manual instructions */}
+      {needsHelp && help && !isInstalling && (
+        <div className="mt-2 pt-2 border-t border-border/50">
+          <button
+            onClick={() => setManualExpanded(!manualExpanded)}
+            className="flex items-center gap-2 text-xs text-text-muted hover:text-text-secondary transition-colors w-full"
+          >
+            <svg
+              className={`w-3 h-3 transition-transform ${manualExpanded ? 'rotate-90' : ''}`}
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              strokeWidth={2}
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+            </svg>
+            <span>Manual setup instructions</span>
+          </button>
+
+          {manualExpanded && (
+            <div className="mt-2 space-y-1.5 animate-fade-in">
+              <p className="text-[11px] text-text-muted">{help.description}</p>
+              <p className="text-[11px] text-text-secondary">{help.instruction}</p>
+              <code className="block px-2 py-1.5 bg-bg-primary rounded-md text-accent text-[11px] font-mono">
+                {help.command}
+              </code>
+              <p className="text-[11px] text-text-muted">{help.note}</p>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -97,38 +304,231 @@ interface PrerequisitesCheckProps {
   onComplete: () => void;
 }
 
+type InstallStep = 'homebrew' | 'node' | 'xcode' | 'rust' | 'claude_cli' | 'claude_auth';
+
 export function PrerequisitesCheck({ onComplete }: PrerequisitesCheckProps) {
   const { status, loading, check, allInstalled } = usePrerequisites();
+  const [testFailure, setTestFailure] = useState(false);
 
-  useEffect(() => {
+  // Installation state
+  const [installingStep, setInstallingStep] = useState<InstallStep | null>(null);
+  const [installOutput, setInstallOutput] = useState<Record<string, string[]>>({});
+  const [actionRequired, setActionRequired] = useState<Record<string, string | null>>({});
+  const [hasHomebrew, setHasHomebrew] = useState<boolean | null>(null);
+  const [hasNode, setHasNode] = useState<boolean | null>(null);
+
+  // Refresh all checks
+  const refreshChecks = useCallback(() => {
     check();
+    checkHomebrew().then(setHasHomebrew);
+    checkNode().then(setHasNode);
   }, [check]);
 
+  useEffect(() => {
+    refreshChecks();
+  }, [refreshChecks]);
+
+  // Helper to get result, optionally overriding with fake failure
+  const getResult = (key: string, realResult: CheckResult | undefined) => {
+    if (testFailure) return FAKE_FAILURES[key];
+    return realResult;
+  };
+
+  // Helper to run an install step with proper event handling
+  const runInstallStep = useCallback(async (
+    step: InstallStep,
+    installFn: () => Promise<unknown>
+  ): Promise<boolean> => {
+    setInstallingStep(step);
+    setInstallOutput((prev) => ({ ...prev, [step]: [] }));
+    setActionRequired((prev) => ({ ...prev, [step]: null }));
+
+    const success = await waitForInstallComplete(
+      installFn,
+      (line) => setInstallOutput((prev) => ({
+        ...prev,
+        [step]: [...(prev[step] || []), line],
+      })),
+      (message) => setActionRequired((prev) => ({
+        ...prev,
+        [step]: message,
+      }))
+    );
+
+    setInstallingStep(null);
+    setActionRequired((prev) => ({ ...prev, [step]: null }));
+
+    // Refresh all checks after installation - longer delay to give system time to update
+    setTimeout(() => {
+      setInstallOutput((prev) => ({
+        ...prev,
+        [step]: [...(prev[step] || []), 'Rechecking...'],
+      }));
+      refreshChecks();
+    }, 1000);
+
+    return success;
+  }, [refreshChecks]);
+
+  // Installation handlers
+  const handleInstallXcode = useCallback(async () => {
+    await runInstallStep('xcode', installXcode);
+  }, [runInstallStep]);
+
+  const handleInstallRust = useCallback(async () => {
+    await runInstallStep('rust', installRust);
+  }, [runInstallStep]);
+
+  const handleInstallClaudeCli = useCallback(async () => {
+    // Check if we need to install homebrew first
+    const brewInstalled = hasHomebrew ?? await checkHomebrew();
+    if (!brewInstalled) {
+      const brewSuccess = await runInstallStep('homebrew', installHomebrew);
+      if (!brewSuccess) return;
+      setHasHomebrew(true);
+    }
+
+    // Check if we need to install node
+    const nodeInstalled = hasNode ?? await checkNode();
+    if (!nodeInstalled) {
+      const nodeSuccess = await runInstallStep('node', installNode);
+      if (!nodeSuccess) return;
+      setHasNode(true);
+    }
+
+    // Finally install Claude CLI
+    await runInstallStep('claude_cli', installClaudeCli);
+  }, [hasHomebrew, hasNode, runInstallStep]);
+
+  const handleClaudeAuth = useCallback(async () => {
+    await runInstallStep('claude_auth', startClaudeAuth);
+  }, [runInstallStep]);
+
+  // Determine install label for Claude CLI based on what's missing
+  const getClaudeCliInstallLabel = () => {
+    if (!hasHomebrew) return 'Install (via Homebrew)';
+    if (!hasNode) return 'Install (+ Node.js)';
+    return 'Install';
+  };
+
   const items = [
-    { key: 'xcode_cli', label: 'Xcode Command Line Tools', result: status?.xcode_cli },
-    { key: 'rust', label: 'Rust & Cargo', result: status?.rust },
-    { key: 'claude_cli', label: 'Claude Code CLI', result: status?.claude_cli },
-    { key: 'claude_auth', label: 'Claude Authentication', result: status?.claude_auth },
+    {
+      key: 'xcode_cli',
+      label: 'Xcode Command Line Tools',
+      result: getResult('xcode_cli', status?.xcode_cli),
+      onInstall: handleInstallXcode,
+      installLabel: 'Install',
+      help: {
+        description: 'Required for compiling native code on macOS',
+        instruction: 'Open Terminal and run:',
+        command: 'xcode-select --install',
+        note: 'A dialog will appear. Click "Install" and wait for completion (~5 min).',
+      },
+    },
+    {
+      key: 'rust',
+      label: 'Rust & Cargo',
+      result: getResult('rust', status?.rust),
+      onInstall: handleInstallRust,
+      installLabel: 'Install',
+      help: {
+        description: 'The programming language used for audio plugin development',
+        instruction: 'Open Terminal and run:',
+        command: "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh",
+        note: (<>Follow the prompts (press Enter for defaults). Then restart your terminal or run <code className="text-accent">source ~/.cargo/env</code></>),
+      },
+    },
+    {
+      key: 'claude_cli',
+      label: 'Claude Code CLI',
+      result: getResult('claude_cli', status?.claude_cli),
+      onInstall: handleInstallClaudeCli,
+      installLabel: getClaudeCliInstallLabel(),
+      help: {
+        description: 'The AI assistant that helps write your plugin code',
+        instruction: 'Requires Node.js 18+. Install with npm:',
+        command: 'npm install -g @anthropic-ai/claude-code',
+        note: (<>Don't have Node.js? Get it from <a href="https://nodejs.org" target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">nodejs.org</a> (LTS version recommended)</>),
+      },
+    },
+    {
+      key: 'claude_auth',
+      label: 'Claude Authentication',
+      result: getResult('claude_auth', status?.claude_auth),
+      onInstall: handleClaudeAuth,
+      installLabel: 'Sign In',
+      help: {
+        description: 'Sign in with your Claude Pro or Max subscription',
+        instruction: (<>
+          <strong className="text-warning">Requires paid subscription.</strong>{' '}
+          <a href="https://claude.ai/upgrade" target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">Upgrade here</a>
+        </>),
+        command: 'claude → /login',
+        note: 'Max plan recommended for uninterrupted development.',
+      },
+    },
   ];
 
-  const hasIssues = status && !allInstalled;
+  // Check if currently installing intermediate steps (homebrew/node for claude_cli)
+  const isInstallingIntermediate = installingStep === 'homebrew' || installingStep === 'node';
 
   return (
-    <div className="space-y-6 animate-fade-in">
+    <div className="space-y-4 animate-fade-in relative">
+      {/* Dev test button - uncomment to test failure states
+      {import.meta.env.DEV && (
+        <button
+          onClick={() => setTestFailure(!testFailure)}
+          className={`absolute -top-2 -right-2 text-[10px] px-2 py-1 rounded-md border transition-colors ${
+            testFailure
+              ? 'bg-error/20 border-error/30 text-error'
+              : 'bg-bg-tertiary border-border text-text-muted hover:text-text-secondary'
+          }`}
+        >
+          {testFailure ? 'Reset' : 'Test Fail'}
+        </button>
+      )}
+      */}
+
       {/* Header */}
       <div className="text-center">
-        <div className="w-12 h-12 mx-auto rounded-xl bg-accent-subtle flex items-center justify-center mb-4">
-          <svg className="w-6 h-6 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+        <div className="w-10 h-10 mx-auto rounded-lg bg-accent-subtle flex items-center justify-center mb-2">
+          <svg className="w-5 h-5 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>
         </div>
-        <h2 className="text-xl font-semibold text-text-primary">System Requirements</h2>
-        <p className="text-sm text-text-secondary mt-1">
-          Checking your development environment
-        </p>
+        <h2 className="text-lg font-semibold text-text-primary">System Requirements</h2>
+        <p className="text-xs text-text-secondary mt-0.5">Checking your development environment</p>
       </div>
 
-      {/* Checklist */}
+      {/* Intermediate installation step (Homebrew/Node for Claude CLI) */}
+      {isInstallingIntermediate && (
+        <div className="p-3 rounded-lg bg-accent-subtle border border-accent/20">
+          <div className="flex items-center gap-2.5 mb-2">
+            <div className="w-7 h-7 rounded-md bg-accent/20 flex items-center justify-center">
+              <Spinner size="sm" className="text-accent" />
+            </div>
+            <div>
+              <div className="text-sm font-medium text-text-primary">
+                {installingStep === 'homebrew' ? 'Installing Homebrew...' : 'Installing Node.js...'}
+              </div>
+              <div className="text-[11px] text-text-muted">
+                {installingStep === 'homebrew'
+                  ? 'Required for installing Node.js'
+                  : 'Required for Claude Code CLI'}
+              </div>
+            </div>
+          </div>
+          {installOutput[installingStep || '']?.length > 0 && (
+            <div className="p-1.5 bg-bg-primary rounded-md max-h-20 overflow-y-auto font-mono text-[10px] text-text-muted">
+              {installOutput[installingStep || ''].map((line, i) => (
+                <div key={i} className="whitespace-pre-wrap break-all">{line}</div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Checklist with inline help */}
       <div className="space-y-2">
         {items.map((item) => (
           <CheckItem
@@ -136,117 +536,22 @@ export function PrerequisitesCheck({ onComplete }: PrerequisitesCheckProps) {
             label={item.label}
             result={item.result}
             isLoading={loading}
+            help={item.help}
+            onInstall={item.onInstall}
+            installLabel={item.installLabel}
+            isInstalling={installingStep === item.key}
+            installOutput={installOutput[item.key] || []}
+            actionRequired={actionRequired[item.key]}
           />
         ))}
       </div>
 
-      {/* Detailed help sections */}
-      {hasIssues && (
-        <div className="space-y-3">
-          {status?.xcode_cli.status !== 'installed' && (
-            <div className="p-4 rounded-xl bg-bg-tertiary border border-border">
-              <div className="flex items-start gap-3">
-                <div className="w-8 h-8 rounded-lg bg-error/20 flex items-center justify-center flex-shrink-0">
-                  <svg className="w-4 h-4 text-error" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M11.42 15.17L17.25 21A2.652 2.652 0 0021 17.25l-5.877-5.877M11.42 15.17l2.496-3.03c.317-.384.74-.626 1.208-.766M11.42 15.17l-4.655 5.653a2.548 2.548 0 11-3.586-3.586l6.837-5.63m5.108-.233c.55-.164 1.163-.188 1.743-.14a4.5 4.5 0 004.486-6.336l-3.276 3.277a3.004 3.004 0 01-2.25-2.25l3.276-3.276a4.5 4.5 0 00-6.336 4.486c.091 1.076-.071 2.264-.904 2.95l-.102.085m-1.745 1.437L5.909 7.5H4.5L2.25 3.75l1.5-1.5L7.5 4.5v1.409l4.26 4.26m-1.745 1.437l1.745-1.437m6.615 8.206L15.75 15.75M4.867 19.125h.008v.008h-.008v-.008z" />
-                  </svg>
-                </div>
-                <div className="flex-1">
-                  <h3 className="text-sm font-medium text-text-primary mb-1">Xcode Command Line Tools</h3>
-                  <p className="text-xs text-text-muted mb-3">Required for compiling native code on macOS</p>
-                  <div className="space-y-2">
-                    <p className="text-xs text-text-secondary">Open Terminal and run:</p>
-                    <code className="block px-3 py-2 bg-bg-primary rounded-lg text-accent text-xs font-mono">
-                      xcode-select --install
-                    </code>
-                    <p className="text-xs text-text-muted">A dialog will appear. Click "Install" and wait for completion (~5 min).</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {status?.rust.status !== 'installed' && (
-            <div className="p-4 rounded-xl bg-bg-tertiary border border-border">
-              <div className="flex items-start gap-3">
-                <div className="w-8 h-8 rounded-lg bg-error/20 flex items-center justify-center flex-shrink-0">
-                  <svg className="w-4 h-4 text-error" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M17.25 6.75L22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3l-4.5 16.5" />
-                  </svg>
-                </div>
-                <div className="flex-1">
-                  <h3 className="text-sm font-medium text-text-primary mb-1">Rust & Cargo</h3>
-                  <p className="text-xs text-text-muted mb-3">The programming language used for audio plugin development</p>
-                  <div className="space-y-2">
-                    <p className="text-xs text-text-secondary">Open Terminal and run:</p>
-                    <code className="block px-3 py-2 bg-bg-primary rounded-lg text-accent text-xs font-mono">
-                      curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-                    </code>
-                    <p className="text-xs text-text-muted">Follow the prompts (press Enter for defaults). Then restart your terminal or run <code className="text-accent">source ~/.cargo/env</code></p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {status?.claude_cli.status !== 'installed' && (
-            <div className="p-4 rounded-xl bg-bg-tertiary border border-border">
-              <div className="flex items-start gap-3">
-                <div className="w-8 h-8 rounded-lg bg-error/20 flex items-center justify-center flex-shrink-0">
-                  <svg className="w-4 h-4 text-error" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 3v1.5M4.5 8.25H3m18 0h-1.5M4.5 12H3m18 0h-1.5m-15 3.75H3m18 0h-1.5M8.25 19.5V21M12 3v1.5m0 15V21m3.75-18v1.5m0 15V21m-9-1.5h10.5a2.25 2.25 0 002.25-2.25V6.75a2.25 2.25 0 00-2.25-2.25H6.75A2.25 2.25 0 004.5 6.75v10.5a2.25 2.25 0 002.25 2.25zm.75-12h9v9h-9v-9z" />
-                  </svg>
-                </div>
-                <div className="flex-1">
-                  <h3 className="text-sm font-medium text-text-primary mb-1">Claude Code CLI</h3>
-                  <p className="text-xs text-text-muted mb-3">The AI assistant that helps write your plugin code</p>
-                  <div className="space-y-2">
-                    <p className="text-xs text-text-secondary">Requires Node.js 18+. Install with npm:</p>
-                    <code className="block px-3 py-2 bg-bg-primary rounded-lg text-accent text-xs font-mono">
-                      npm install -g @anthropic-ai/claude-code
-                    </code>
-                    <p className="text-xs text-text-muted">
-                      Don't have Node.js? Get it from{' '}
-                      <a href="https://nodejs.org" target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">nodejs.org</a>
-                      {' '}(LTS version recommended)
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {status?.claude_auth.status === 'needsconfig' && (
-            <div className="p-4 rounded-xl bg-bg-tertiary border border-border">
-              <div className="flex items-start gap-3">
-                <div className="w-8 h-8 rounded-lg bg-warning/20 flex items-center justify-center flex-shrink-0">
-                  <svg className="w-4 h-4 text-warning" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 5.25a3 3 0 013 3m3 0a6 6 0 01-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v2.25H6v2.25H2.25v-2.818c0-.597.237-1.17.659-1.591l6.499-6.499c.404-.404.527-1 .43-1.563A6 6 0 1121.75 8.25z" />
-                  </svg>
-                </div>
-                <div className="flex-1">
-                  <h3 className="text-sm font-medium text-text-primary mb-1">Claude Authentication</h3>
-                  <p className="text-xs text-text-muted mb-3">Sign in to your Anthropic account to use Claude</p>
-                  <div className="space-y-2">
-                    <p className="text-xs text-text-secondary">Open Terminal and run:</p>
-                    <code className="block px-3 py-2 bg-bg-primary rounded-lg text-accent text-xs font-mono">
-                      claude login
-                    </code>
-                    <p className="text-xs text-text-muted">This will open your browser to sign in. Once authenticated, return here and click "Recheck".</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
       {/* Actions */}
-      <div className="flex gap-3">
+      <div className="flex gap-2">
         <button
-          onClick={check}
-          disabled={loading}
-          className="flex-1 py-2.5 px-4 bg-bg-tertiary hover:bg-bg-elevated text-text-secondary hover:text-text-primary font-medium rounded-xl border border-border transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+          onClick={refreshChecks}
+          disabled={loading || installingStep !== null}
+          className="flex-1 py-2 px-3 text-sm bg-bg-tertiary hover:bg-bg-elevated text-text-secondary hover:text-text-primary font-medium rounded-lg border border-border transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
         >
           {loading && <Spinner size="sm" />}
           Recheck
@@ -254,10 +559,10 @@ export function PrerequisitesCheck({ onComplete }: PrerequisitesCheckProps) {
 
         <button
           onClick={onComplete}
-          disabled={!allInstalled}
-          className="flex-1 py-2.5 px-4 bg-accent hover:bg-accent-hover disabled:bg-bg-tertiary disabled:text-text-muted text-white font-medium rounded-xl transition-all duration-200 disabled:cursor-not-allowed hover:shadow-lg hover:shadow-accent/25 disabled:shadow-none"
+          disabled={!allInstalled || testFailure || installingStep !== null}
+          className="flex-1 py-2 px-3 text-sm bg-accent hover:bg-accent-hover disabled:bg-bg-tertiary disabled:text-text-muted text-white font-medium rounded-lg transition-all duration-200 disabled:cursor-not-allowed hover:shadow-lg hover:shadow-accent/25 disabled:shadow-none"
         >
-          {allInstalled ? 'Continue' : 'Requirements needed'}
+          {allInstalled && !testFailure ? 'Continue' : 'Requirements needed'}
         </button>
       </div>
     </div>
