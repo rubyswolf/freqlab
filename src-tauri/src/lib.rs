@@ -28,6 +28,14 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::prerequisites::check_prerequisites,
+            commands::prerequisites::check_homebrew,
+            commands::prerequisites::check_node,
+            commands::prerequisites::install_homebrew,
+            commands::prerequisites::install_node,
+            commands::prerequisites::install_xcode,
+            commands::prerequisites::install_rust,
+            commands::prerequisites::install_claude_cli,
+            commands::prerequisites::start_claude_auth,
             commands::projects::create_project,
             commands::projects::list_projects,
             commands::projects::get_project,
