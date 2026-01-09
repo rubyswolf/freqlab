@@ -109,7 +109,7 @@ export function WelcomeWizard() {
                             <div className="px-3 py-2 rounded-lg bg-warning/10 border border-warning/20 text-center">
                                 <p className="text-xs text-text-secondary">
                                     <span className="font-medium text-warning">Claude Pro or Max required</span>
-                                    {' — '}
+                                    {' - '}
                                     <a href="https://claude.ai/login" target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">
                                         Login now
                                     </a>

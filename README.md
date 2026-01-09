@@ -29,7 +29,7 @@ Describe → Build → Preview → Iterate → Publish
 1. Create a plugin project and choose a template
 2. Chat to describe what you want, Claude Code writes the Rust code
 3. One-click build compiles your plugin
-4. Hot reload lets you hear changes instantly—test with signals, samples, live input, or MIDI
+4. Hot reload lets you hear changes instantly - test with signals, samples, live input, or MIDI
 5. Revert to any version if something breaks
 6. Publish directly to your DAW
 
@@ -50,7 +50,7 @@ Describe → Build → Preview → Iterate → Publish
 
 | Feature               | Description                                                      |
 | --------------------- | ---------------------------------------------------------------- |
-| **Hot reload**        | Plugin reloads automatically when code changes—no restart needed |
+| **Hot reload**        | Plugin reloads automatically when code changes - no restart needed |
 | **Test signals**      | Built-in sine, noise, sweep, impulse, and chirp generators       |
 | **Sample playback**   | Load WAV, MP3, or AAC files as input                             |
 | **Live audio input**  | Route audio from your interface through your plugin              |
@@ -91,9 +91,9 @@ Choose your starting point:
 ## Prerequisites
 
 -   **macOS 12+** (Monterey or later)
--   **Xcode Command Line Tools** — `xcode-select --install`
--   **Rust** — via [rustup](https://rustup.rs/)
--   **Claude Code CLI** — requires an active Anthropic subscription
+-   **Xcode Command Line Tools** - `xcode-select --install`
+-   **Rust** - via [rustup](https://rustup.rs/)
+-   **Claude Code CLI** - requires an active Anthropic subscription
 
 > [!NOTE]
 > freqlab on-boarding checks these on first launch. It also guides the user through the setup and does what it can through the UI alone.
@@ -146,8 +146,8 @@ freqlab is **GPL-3.0**. See [LICENSE](LICENSE).
 
 Plugins use [nih-plug](https://github.com/robbert-vdh/nih-plug):
 
--   **nih-plug framework** — ISC license
--   **VST3 bindings** — GPL-3.0
+-   **nih-plug framework** - ISC license
+-   **VST3 bindings** - GPL-3.0
 
 **What this means:**
 
