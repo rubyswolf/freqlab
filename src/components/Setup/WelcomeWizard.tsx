@@ -1,8 +1,9 @@
 import { useState } from 'react'
 import { PrerequisitesCheck } from './PrerequisitesCheck'
+import { DawSetup } from './DawSetup'
 import { useSettingsStore } from '../../stores/settingsStore'
 
-type WizardStep = 'welcome' | 'prerequisites' | 'complete'
+type WizardStep = 'welcome' | 'prerequisites' | 'daw-setup' | 'complete'
 
 function WaveformIcon() {
     return (
@@ -126,7 +127,14 @@ export function WelcomeWizard() {
                         </div>
                     )}
 
-                    {step === 'prerequisites' && <PrerequisitesCheck onComplete={() => setStep('complete')} />}
+                    {step === 'prerequisites' && <PrerequisitesCheck onComplete={() => setStep('daw-setup')} />}
+
+                    {step === 'daw-setup' && (
+                        <DawSetup
+                            onComplete={() => setStep('complete')}
+                            onBack={() => setStep('prerequisites')}
+                        />
+                    )}
 
                     {step === 'complete' && (
                         <div className="text-center space-y-4 animate-fade-in">
@@ -152,13 +160,13 @@ export function WelcomeWizard() {
 
                     {/* Step indicator */}
                     <div className="flex justify-center gap-2 mt-6">
-                        {['welcome', 'prerequisites', 'complete'].map((s, i) => (
+                        {['welcome', 'prerequisites', 'daw-setup', 'complete'].map((s, i) => (
                             <div
                                 key={s}
                                 className={`h-1.5 rounded-full transition-all duration-300 ${
                                     s === step
                                         ? 'w-6 bg-accent'
-                                        : i < ['welcome', 'prerequisites', 'complete'].indexOf(step)
+                                        : i < ['welcome', 'prerequisites', 'daw-setup', 'complete'].indexOf(step)
                                         ? 'w-1.5 bg-accent/50'
                                         : 'w-1.5 bg-border'
                                 }`}
