@@ -1,16 +1,33 @@
+import { useRef } from 'react'
 import { ProjectList } from '../Projects'
 import { useLayoutStore } from '../../stores/layoutStore'
 import { useProjectBusyStore } from '../../stores/projectBusyStore'
+import { usePreviewStore } from '../../stores/previewStore'
+import { useTipsStore } from '../../stores/tipsStore'
+import { Tip } from '../Common/Tip'
 
 interface SidebarProps {
     onNewPlugin: () => void
 }
 
 export function Sidebar({ onNewPlugin }: SidebarProps) {
+    const collapseButtonRef = useRef<HTMLButtonElement>(null)
+
     // Use selectors for reactive state
     const sidebarCollapsed = useLayoutStore((s) => s.sidebarCollapsed)
     const toggleSidebar = useLayoutStore.getState().toggleSidebar
     const anyBuildInProgress = useProjectBusyStore((s) => s.buildingPath !== null)
+    const previewIsOpen = usePreviewStore((s) => s.isOpen)
+    const markTipShown = useTipsStore.getState().markTipShown
+
+    // When user collapses sidebar, also mark the tip as shown
+    const handleToggleSidebar = () => {
+        if (!sidebarCollapsed) {
+            // User is collapsing - mark tip as shown so it won't appear again
+            markTipShown('collapse-sidebar')
+        }
+        toggleSidebar()
+    }
 
     return (
         <aside
@@ -79,7 +96,8 @@ export function Sidebar({ onNewPlugin }: SidebarProps) {
                         <span className="text-text-muted px-2 py-0.5 bg-bg-tertiary rounded whitespace-nowrap">v0.1.4</span>
                     </div>
                     <button
-                        onClick={toggleSidebar}
+                        ref={collapseButtonRef}
+                        onClick={handleToggleSidebar}
                         className="p-2 rounded-lg text-text-muted hover:text-text-primary hover:bg-bg-tertiary transition-colors"
                         title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
                     >
@@ -97,6 +115,17 @@ export function Sidebar({ onNewPlugin }: SidebarProps) {
                     </button>
                 </div>
             </div>
+
+            {/* Tip for collapsing sidebar - shows when preview is open and sidebar not collapsed */}
+            <Tip
+                tipId="collapse-sidebar"
+                targetRef={collapseButtonRef}
+                message="Need more space? Collapse the sidebar to focus on your plugin."
+                position="right"
+                showCondition={previewIsOpen && !sidebarCollapsed}
+                delayMs={3000}
+                icon="lightbulb"
+            />
         </aside>
     )
 }

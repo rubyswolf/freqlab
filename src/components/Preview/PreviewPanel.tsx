@@ -211,11 +211,24 @@ export function PreviewPanel() {
     };
   }, [isOpen, setDemoSamples, setLoadedPlugin]);
 
+  // Cleanup plugin when project is deleted/deselected (activeProject becomes null)
+  useEffect(() => {
+    if (!activeProject) {
+      // Close editor and unload plugin from backend
+      previewApi.pluginCloseEditor().catch(() => {});
+      previewApi.pluginUnload().catch(() => {});
+      previewApi.setPluginIsInstrument(false).catch(() => {});
+      // Reset store state
+      setLoadedPlugin({ status: 'unloaded' });
+      usePreviewStore.getState().setEditorOpen(false);
+      setPluginAvailable(false);
+    }
+  }, [activeProject, setLoadedPlugin, setPluginAvailable]);
+
   // Check if plugin is available when project changes
   // Note: We check even when panel is closed so the build button reflects correct state
   useEffect(() => {
     if (!activeProject) {
-      setPluginAvailable(false);
       return;
     }
 

@@ -141,14 +141,6 @@ fn get_current_commit_sync(path: &str) -> Result<String, String> {
     Ok(hash)
 }
 
-/// Get the current HEAD commit hash (async - runs on blocking thread pool)
-pub async fn get_current_commit(path: &str) -> Result<String, String> {
-    let path = path.to_string();
-    tokio::task::spawn_blocking(move || get_current_commit_sync(&path))
-        .await
-        .map_err(|e| format!("Task join error: {}", e))?
-}
-
 /// Revert files to a specific commit - blocking implementation
 fn revert_to_commit_sync(
     project_path: &str,

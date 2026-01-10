@@ -6,6 +6,7 @@ import { PluginViewerToggle } from './PluginViewerToggle';
 import { usePreviewStore } from '../../stores/previewStore';
 import { useUpdateStore } from '../../stores/updateStore';
 import { useProjectBusyStore } from '../../stores/projectBusyStore';
+import { useProjectStore } from '../../stores/projectStore';
 
 interface HeaderProps {
   title?: string;
@@ -39,9 +40,19 @@ export function Header({ title = 'freqlab' }: HeaderProps) {
   const updateStatus = useUpdateStore((s) => s.status);
   const hasUpdate = updateStatus === 'available';
   const anyBuildInProgress = useProjectBusyStore((s) => s.buildingPath !== null);
+  const activeProject = useProjectStore((s) => s.activeProject);
+  const hasActiveProject = activeProject !== null;
 
   // === STABLE ACTION REFERENCES ===
   const togglePreview = usePreviewStore.getState().toggleOpen;
+  const setPreviewOpen = usePreviewStore.getState().setOpen;
+
+  // Close preview panel when no project is selected (e.g., after deleting all projects)
+  useEffect(() => {
+    if (!hasActiveProject && isPreviewOpen) {
+      setPreviewOpen(false);
+    }
+  }, [hasActiveProject, isPreviewOpen, setPreviewOpen]);
 
   // Listen for open-settings events (e.g., from toast actions)
   useEffect(() => {
@@ -70,24 +81,29 @@ export function Header({ title = 'freqlab' }: HeaderProps) {
           <h1 className="text-lg font-semibold gradient-text">{title}</h1>
         </div>
         <div className="flex items-center gap-2">
-          <PluginViewerToggle />
-          <button
-            onClick={togglePreview}
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-200 ${
-              isPreviewOpen
-                ? 'bg-accent text-white'
-                : 'bg-bg-tertiary text-text-primary hover:bg-accent/20 hover:text-accent border border-border hover:border-accent/30'
-            }`}
-            title={isPreviewOpen ? 'Close Controls' : 'Open Controls'}
-          >
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M19.114 5.636a9 9 0 010 12.728M16.463 8.288a5.25 5.25 0 010 7.424M6.75 8.25l4.72-4.72a.75.75 0 011.28.53v15.88a.75.75 0 01-1.28.53l-4.72-4.72H4.51c-.88 0-1.704-.507-1.938-1.354A9.01 9.01 0 012.25 12c0-.83.112-1.633.322-2.396C2.806 8.756 3.63 8.25 4.51 8.25H6.75z" />
-            </svg>
-            Controls
-          </button>
+          {/* Only show plugin controls when a project is selected */}
+          {hasActiveProject && (
+            <>
+              <PluginViewerToggle />
+              <button
+                onClick={togglePreview}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-200 ${
+                  isPreviewOpen
+                    ? 'bg-accent text-white'
+                    : 'bg-bg-tertiary text-text-primary hover:bg-accent/20 hover:text-accent border border-border hover:border-accent/30'
+                }`}
+                title={isPreviewOpen ? 'Close Controls' : 'Open Controls'}
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M19.114 5.636a9 9 0 010 12.728M16.463 8.288a5.25 5.25 0 010 7.424M6.75 8.25l4.72-4.72a.75.75 0 011.28.53v15.88a.75.75 0 01-1.28.53l-4.72-4.72H4.51c-.88 0-1.704-.507-1.938-1.354A9.01 9.01 0 012.25 12c0-.83.112-1.633.322-2.396C2.806 8.756 3.63 8.25 4.51 8.25H6.75z" />
+                </svg>
+                Controls
+              </button>
 
-          {/* Divider */}
-          <div className="h-6 w-px bg-border mx-1" />
+              {/* Divider */}
+              <div className="h-6 w-px bg-border mx-1" />
+            </>
+          )}
 
           <button
             onClick={() => !anyBuildInProgress && setShowShareImport(true)}
