@@ -46,7 +46,7 @@ function ToastItem({ toast }: { toast: ToastType }) {
               toast.action?.onClick();
               removeToast(toast.id);
             }}
-            className="mt-2 text-sm font-medium underline hover:no-underline"
+            className="mt-2 px-3 py-1 text-sm font-medium bg-white/20 hover:bg-white/30 rounded-md transition-colors"
           >
             {toast.action.label}
           </button>

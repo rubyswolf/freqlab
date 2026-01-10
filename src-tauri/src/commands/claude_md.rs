@@ -114,9 +114,9 @@ fn generate_header(
 
 fn generate_critical_guidelines(ui_framework: &str) -> String {
     let (ui_file, ui_step, ipc_step, ui_reminder) = match ui_framework {
-        "headless" => (
+        "native" => (
             "",
-            "3. *(Skip - headless plugin has no custom UI)*",
+            "3. *(Skip - native plugin has no custom UI)*",
             "4. *(Skip - no UI to wire up)*",
             "",
         ),
@@ -161,7 +161,7 @@ Before saying a feature is "done", verify ALL boxes are checked:
 
 - [ ] Parameter added to `Params` struct with `#[id = "..."]`
 - [ ] DSP code uses the parameter via `.smoothed.next()` or `.value()`
-- [ ] **UI CONTROL EXISTS** (unless headless) - slider/knob/button in the UI
+- [ ] **UI CONTROL EXISTS** (unless native) - slider/knob/button in the UI
 - [ ] UI sends parameter changes to plugin (IPC for webview, setter for egui)
 - [ ] Plugin sends parameter changes to UI (for host automation sync)
 
@@ -188,7 +188,7 @@ fn generate_ui_framework_section(ui_framework: &str) -> String {
     match ui_framework {
         "webview" => generate_webview_section(),
         "egui" => generate_egui_section(),
-        "headless" => generate_headless_section(),
+        "native" => generate_native_section(),
         _ => String::new(),
     }
 }
@@ -550,15 +550,15 @@ if response.drag_stopped() {
     .to_string()
 }
 
-fn generate_headless_section() -> String {
-    r#"## Headless Plugin (No Custom UI)
+fn generate_native_section() -> String {
+    r#"## Native Plugin (No Custom UI)
 
 This plugin has no custom graphical interface. Users interact through:
 - DAW's generic parameter interface
 - Automation lanes
 - MIDI CC mapping (if enabled)
 
-### Best Practices for Headless Plugins
+### Best Practices for Native Plugins
 
 1. **Clear parameter names**: Users only see the name in their DAW
 2. **Sensible ranges**: Make defaults useful, ranges intuitive
@@ -1102,32 +1102,32 @@ mod tests {
     }
 
     #[test]
-    fn test_scenario_3_effect_headless_no_components() {
-        let content = generate_claude_md("test-processor", "effect", "headless", None);
+    fn test_scenario_3_effect_native_no_components() {
+        let content = generate_claude_md("test-processor", "effect", "native", None);
 
-        let scenario = "Scenario 3 (effect + headless + no components)";
+        let scenario = "Scenario 3 (effect + native + no components)";
 
         // Check header
         check_section_present(&content, "Type**: effect", scenario);
-        check_section_present(&content, "UI Framework**: headless", scenario);
+        check_section_present(&content, "UI Framework**: native", scenario);
 
-        // Check headless-specific guidelines
-        check_section_present(&content, "**This is a headless project.**", scenario);
-        check_section_present(&content, "*(Skip - headless plugin has no custom UI)*", scenario);
-        check_section_present(&content, "## Headless Plugin (No Custom UI)", scenario);
+        // Check native-specific guidelines
+        check_section_present(&content, "**This is a native project.**", scenario);
+        check_section_present(&content, "*(Skip - native plugin has no custom UI)*", scenario);
+        check_section_present(&content, "## Native Plugin (No Custom UI)", scenario);
 
         // Should NOT have webview or egui sections
         assert!(
             !content.contains("## WebView UI Framework"),
-            "Should NOT have webview section for headless"
+            "Should NOT have webview section for native"
         );
         assert!(
             !content.contains("## egui UI Framework"),
-            "Should NOT have egui section for headless"
+            "Should NOT have egui section for native"
         );
         assert!(
             !content.contains("src/ui.html"),
-            "Should NOT mention ui.html for headless"
+            "Should NOT mention ui.html for native"
         );
 
         // Check effect patterns still present
@@ -1183,7 +1183,7 @@ mod tests {
         // Test that UI enforcement warnings are present for webview and egui
         let webview_content = generate_claude_md("test", "effect", "webview", None);
         let egui_content = generate_claude_md("test", "effect", "egui", None);
-        let headless_content = generate_claude_md("test", "effect", "headless", None);
+        let native_content = generate_claude_md("test", "effect", "native", None);
 
         // WebView should have strong UI warnings
         assert!(
@@ -1201,10 +1201,10 @@ mod tests {
             "egui should have UI warning"
         );
 
-        // Headless should skip UI steps
+        // Native should skip UI steps
         assert!(
-            headless_content.contains("Skip - headless plugin has no custom UI"),
-            "Headless should skip UI steps"
+            native_content.contains("Skip - native plugin has no custom UI"),
+            "Native should skip UI steps"
         );
 
         println!("✅ UI enforcement warnings PASSED");

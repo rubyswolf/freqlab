@@ -83,8 +83,8 @@ Choose your starting point:
 
 | Type           | UI Framework              | Description              |
 | -------------- | ------------------------- | ------------------------ |
-| **Effect**     | WebView / egui / Headless | Process incoming audio   |
-| **Instrument** | WebView / egui / Headless | Generate audio from MIDI |
+| **Effect**     | WebView / egui / Native | Process incoming audio   |
+| **Instrument** | WebView / egui / Native | Generate audio from MIDI |
 
 ---
 

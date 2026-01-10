@@ -43,7 +43,7 @@ export function PluginViewerToggle() {
         await previewApi.setPluginIsInstrument(false);
         setLoadedPlugin({ status: 'unloaded' });
         // WebView plugins require a fresh build before re-enabling (class name conflicts)
-        // Non-webview plugins (egui/headless) can be re-enabled immediately
+        // Non-webview plugins (egui/native) can be re-enabled immediately
         if (activeProject.uiFramework === 'webview') {
           setWebviewNeedsFreshBuild(true);
         } else {
@@ -139,14 +139,14 @@ export function PluginViewerToggle() {
 
   const isLoading = pluginLoading || loadedPlugin.status === 'loading' || loadedPlugin.status === 'reloading';
   const isActive = loadedPlugin.status === 'active';
-  const isHeadless = activeProject.uiFramework === 'headless';
+  const isNative = activeProject.uiFramework === 'native';
   const needsBuild = !pluginAvailable;
   const needsFreshBuild = webviewNeedsFreshBuild && activeProject.uiFramework === 'webview';
   // Engine initializes on-demand when toggle is clicked, so don't require it for enabling
   // Always allow disabling if plugin is active - only disable when trying to enable but can't
-  // Headless plugins have no UI, so always disabled
+  // Native plugins have no UI, so always disabled
   // Disable during builds to prevent version conflicts
-  const isDisabled = isHeadless || isLoading || buildInProgress ||
+  const isDisabled = isNative || isLoading || buildInProgress ||
     (!isActive && needsFreshBuild && loadedPlugin.status === 'unloaded') ||
     (!isActive && needsBuild);
 
@@ -155,8 +155,8 @@ export function PluginViewerToggle() {
 
   // Determine status message and color - always show status
   const getStatusMessage = () => {
-    // Headless plugins have no UI to view
-    if (isHeadless) {
+    // Native plugins have no UI to view
+    if (isNative) {
       return { text: 'Unavailable for native plugins', color: 'text-text-muted' };
     }
     if (isLoading) {
@@ -192,9 +192,9 @@ export function PluginViewerToggle() {
 
   const status = getStatusMessage();
 
-  // Determine dot color: grey (no build/headless), orange (available but off), green (active)
+  // Determine dot color: grey (no build/native), orange (available but off), green (active)
   const getDotColor = () => {
-    if (isHeadless) return 'bg-zinc-500'; // Grey - headless has no UI
+    if (isNative) return 'bg-zinc-500'; // Grey - native has no UI
     if (isLoading) return 'bg-amber-400 animate-pulse';
     if (loadedPlugin.status === 'error') return 'bg-error';
     if (isActive) return 'bg-accent'; // Green - active (checked before needsBuild)
@@ -205,8 +205,8 @@ export function PluginViewerToggle() {
 
   // Build tooltip text
   const getTooltip = () => {
-    if (isHeadless) {
-      return 'Native/headless plugins have no UI to preview';
+    if (isNative) {
+      return 'Native plugins have no UI to preview';
     }
     if (buildInProgress) {
       return 'Wait for build to complete';

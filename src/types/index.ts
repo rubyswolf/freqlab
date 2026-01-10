@@ -83,7 +83,7 @@ export interface ProjectMeta {
 
 export type PluginTemplate = 'effect' | 'instrument';
 
-export type UIFramework = 'webview' | 'egui' | 'headless';
+export type UIFramework = 'webview' | 'egui' | 'native';
 
 // Starter components for Effect plugins (custom_gui removed - handled by uiFramework)
 export type EffectComponent =

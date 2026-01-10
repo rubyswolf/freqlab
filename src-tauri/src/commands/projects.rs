@@ -9,7 +9,7 @@ pub struct ProjectMeta {
     pub description: String,
     pub template: Option<String>, // "effect" or "instrument"
     #[serde(rename = "uiFramework")]
-    pub ui_framework: Option<String>, // "webview", "egui", or "headless"
+    pub ui_framework: Option<String>, // "webview", "egui", or "native"
     pub components: Option<Vec<String>>, // Starter components selected
     pub created_at: String,
     pub updated_at: String,
@@ -24,7 +24,7 @@ pub struct CreateProjectInput {
     pub description: String,
     pub template: String, // "effect" or "instrument"
     #[serde(rename = "uiFramework")]
-    pub ui_framework: String, // "webview", "egui", or "headless"
+    pub ui_framework: String, // "webview", "egui", or "native"
     #[serde(rename = "vendorName")]
     pub vendor_name: Option<String>,
     #[serde(rename = "vendorUrl")]
@@ -242,7 +242,7 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0""#,
         "egui" => r#"nih_plug_egui = { git = "https://github.com/robbert-vdh/nih-plug.git", rev = "28b149ec" }
 egui = "0.24""#,
-        _ => "", // headless - no additional deps
+        _ => "", // native - no additional deps
     };
 
     // Write Cargo.toml (project is a workspace member, no [workspace] section needed)
@@ -317,7 +317,7 @@ strip = "symbols"
             &pascal_name, &snake_name, &description_escaped, &vst3_id,
             vendor_name, &vendor_id, vendor_url, vendor_email,
         ),
-        ("instrument", _) => generate_instrument_headless_template(
+        ("instrument", _) => generate_instrument_native_template(
             &pascal_name, &snake_name, &description_escaped, &vst3_id,
             vendor_name, &vendor_id, vendor_url, vendor_email,
         ),
@@ -329,7 +329,7 @@ strip = "symbols"
             &pascal_name, &snake_name, &description_escaped, &vst3_id,
             vendor_name, &vendor_id, vendor_url, vendor_email,
         ),
-        _ => generate_effect_headless_template(
+        _ => generate_effect_native_template(
             &pascal_name, &snake_name, &description_escaped, &vst3_id,
             vendor_name, &vendor_id, vendor_url, vendor_email,
         ),
@@ -534,8 +534,8 @@ pub async fn get_workspace_path_string() -> String {
     get_workspace_path().to_string_lossy().to_string()
 }
 
-/// Generate a headless effect plugin template (no custom UI)
-fn generate_effect_headless_template(
+/// Generate a native effect plugin template (no custom UI)
+fn generate_effect_native_template(
     pascal_name: &str,
     snake_name: &str,
     description: &str,
@@ -662,8 +662,8 @@ nih_export_vst3!({pascal_name});
     )
 }
 
-/// Generate a headless instrument plugin template (no custom UI)
-fn generate_instrument_headless_template(
+/// Generate a native instrument plugin template (no custom UI)
+fn generate_instrument_native_template(
     pascal_name: &str,
     snake_name: &str,
     description: &str,
