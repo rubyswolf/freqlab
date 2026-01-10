@@ -124,7 +124,7 @@ export function SettingsModal({ isOpen, onClose, initialTab }: SettingsModalProp
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Settings" size="xl">
-      <div className="flex gap-6 min-h-[400px]">
+      <div className="flex gap-6 h-[550px] max-h-[calc(100vh-180px)]">
         {/* Sidebar tabs */}
         <div className="w-48 flex-shrink-0 border-r border-border pr-4">
           <nav className="space-y-1">
@@ -148,8 +148,8 @@ export function SettingsModal({ isOpen, onClose, initialTab }: SettingsModalProp
           </nav>
         </div>
 
-        {/* Content area */}
-        <div className="flex-1 min-w-0">
+        {/* Content area - fixed height with scroll */}
+        <div className="flex-1 min-w-0 overflow-y-auto pr-2">
           {activeTab === 'general' && <ThemePicker />}
           {activeTab === 'audio' && <AudioSettings />}
           {activeTab === 'ai' && <AISettings />}

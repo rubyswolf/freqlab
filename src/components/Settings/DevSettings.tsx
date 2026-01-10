@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { useTipsStore } from '../../stores/tipsStore';
 
 function formatBytes(bytes: number): string {
   if (bytes === 0) return '0 B';
@@ -151,6 +152,22 @@ export function DevSettings() {
             </pre>
           </div>
         )}
+      </div>
+
+      {/* Reset Tips Section */}
+      <div className="border border-border rounded-lg p-4">
+        <h4 className="font-medium text-text-primary mb-2">Reset Tips</h4>
+        <p className="text-sm text-text-muted mb-4">
+          Show all onboarding tips again. Useful if you want to see the helpful hints you dismissed.
+        </p>
+        <button
+          onClick={() => {
+            useTipsStore.getState().resetAllTips();
+          }}
+          className="px-4 py-2 text-sm font-medium text-accent bg-accent/10 hover:bg-accent/20 rounded-lg border border-accent/30 transition-colors"
+        >
+          Reset All Tips
+        </button>
       </div>
 
       {/* Reset App State Section */}

@@ -150,6 +150,18 @@ select {
   animation: slideIn 0.3s ease-out;
 }
 
+/* Tip bounce animation */
+@keyframes tipBounce {
+  0% { opacity: 0; transform: scale(0.8) translateY(10px); }
+  50% { opacity: 1; transform: scale(1.05) translateY(-2px); }
+  70% { transform: scale(0.98) translateY(1px); }
+  100% { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.animate-tip-bounce {
+  animation: tipBounce 0.4s ease-out forwards;
+}
+
 /* Glass morphism effect */
 .glass {
   background: rgba(23, 23, 23, 0.8);

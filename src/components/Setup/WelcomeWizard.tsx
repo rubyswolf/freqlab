@@ -60,7 +60,7 @@ export function WelcomeWizard() {
             <div className="fixed inset-0 bg-gradient-to-br from-accent/5 via-transparent to-transparent pointer-events-none" />
 
             <div className="w-full max-w-lg relative">
-                <div className="glass rounded-2xl border border-border p-6 shadow-2xl animate-fade-in">
+                <div className="glass rounded-2xl border border-border p-6 shadow-2xl animate-fade-in max-h-[calc(100vh-120px)] overflow-y-auto">
                     {step === 'welcome' && (
                         <div className="space-y-5">
                             {/* Logo & Title */}
