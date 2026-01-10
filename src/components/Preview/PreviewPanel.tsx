@@ -67,17 +67,22 @@ export function PreviewPanel() {
     setLoadedPlugin,
     masterVolume,
     setMasterVolume,
+    // Shared plugin viewer state (used by PluginViewerToggle in Header)
+    pluginAvailable,
+    setPluginAvailable,
+    currentPluginVersion,
+    setCurrentPluginVersion,
+    webviewNeedsFreshBuild,
+    setWebviewNeedsFreshBuild,
+    pluginLoading,
+    setPluginLoading,
+    engineInitialized,
+    setEngineInitialized,
   } = usePreviewStore();
 
   const { activeProject } = useProjectStore();
   const { audioSettings, markAudioSettingsApplied } = useSettingsStore();
-  const [engineInitialized, setEngineInitialized] = useState(false);
   const [engineError, setEngineError] = useState<string | null>(null);
-  const [pluginLoading, setPluginLoading] = useState(false);
-  const [pluginAvailable, setPluginAvailable] = useState(false);
-  const [currentVersion, setCurrentVersion] = useState(1);
-  // WebView projects need a fresh build after switching due to wry class name conflicts
-  const [webviewNeedsFreshBuild, setWebviewNeedsFreshBuild] = useState(false);
   // Spectrum analyzer toggle
   const [showSpectrum, setShowSpectrum] = useState(false);
   // Waveform display toggle
@@ -448,7 +453,7 @@ export function PreviewPanel() {
         const version = await invoke<number>('get_current_version', {
           projectPath: activeProject.path,
         });
-        setCurrentVersion(version);
+        setCurrentPluginVersion(version);
 
         // Check if a .clap plugin exists for this version
         // Use folder name from path, not display name, for filesystem operations
@@ -509,7 +514,7 @@ export function PreviewPanel() {
 
         // Always update plugin availability state
         setPluginAvailable(true);
-        setCurrentVersion(version);
+        setCurrentPluginVersion(version);
         setBuildStatus('ready');
 
         // For webview projects, check if this was a "fresh build" (first build after switching projects)
@@ -579,56 +584,8 @@ export function PreviewPanel() {
     };
   }, [isOpen, activeProject, setLoadedPlugin]);
 
-  // Close plugin and stop playback when switching projects
-  // Uses refs to get current values instead of stale closure values
-  // The cleanup runs BEFORE the new project is loaded (return function runs on dependency change)
-  useEffect(() => {
-    // No setup needed on mount, just return the cleanup function
-    return () => {
-      // This cleanup runs when activeProject?.name changes (before the new project loads)
-      // Using refs ensures we get the current values, not stale closure values
-
-      // IMPORTANT: Reset UI state synchronously FIRST, before async cleanup
-      // This ensures the new project sees correct "unloaded" state immediately
-      if (loadedPluginRef.current.status === 'active') {
-        setLoadedPlugin({ status: 'unloaded' });
-      }
-      if (isPlayingRef.current) {
-        setPlaying(false);
-      }
-
-      const cleanupAsync = async () => {
-        // Stop playback (using refs for current state)
-        if (isPlayingRef.current && engineInitializedRef.current) {
-          try {
-            await previewApi.previewStop();
-          } catch (err) {
-            console.error('Failed to stop playback on project switch:', err);
-          }
-        }
-
-        // Close editor and unload plugin when switching projects
-        if (loadedPluginRef.current.status === 'active' && engineInitializedRef.current) {
-          try {
-            await previewApi.pluginCloseEditor();
-            await previewApi.pluginUnload();
-            // Reset instrument flag when unloading
-            await previewApi.setPluginIsInstrument(false);
-          } catch (err) {
-            console.error('Failed to close plugin on project switch:', err);
-          }
-        }
-      };
-
-      // Fire and forget the async cleanup
-      // Note: This is intentionally not awaited since React cleanup is synchronous
-      cleanupAsync();
-    };
-  }, [activeProject?.name, setPlaying, setLoadedPlugin]);
-
-  // Track when WebView projects need a fresh build (due to wry class name conflicts)
-  // When switching to a WebView project, require a fresh build before opening editor
-  // Also reset plugin state on ANY project change to ensure toggle starts OFF
+  // Handle project switching - stop playback and set webview flag
+  // Plugin unloading is handled by PluginViewerToggle component
   const prevProjectNameRef = useRef<string | undefined>(undefined);
   useEffect(() => {
     // Detect project change (not just initial mount)
@@ -636,37 +593,69 @@ export function PreviewPanel() {
                            prevProjectNameRef.current !== activeProject?.name;
     prevProjectNameRef.current = activeProject?.name;
 
-    // On project change, immediately reset plugin state to unloaded
-    // This ensures the toggle shows OFF before any build completes
-    if (projectChanged) {
-      setLoadedPlugin({ status: 'unloaded' });
-      // Also unload from backend to ensure clean state
-      previewApi.pluginCloseEditor().catch(() => {});
-      previewApi.pluginUnload().catch(() => {});
+    // Only act on actual project changes, not every render
+    if (!projectChanged) return;
+
+    // Stop playback on project switch
+    if (isPlayingRef.current) {
+      setPlaying(false);
+      if (engineInitializedRef.current) {
+        previewApi.previewStop().catch(err => {
+          console.error('Failed to stop playback on project switch:', err);
+        });
+      }
     }
 
+    // Reset plugin state - actual unloading handled by PluginViewerToggle
+    setLoadedPlugin({ status: 'unloaded' });
+
+    // Close editor and unload from backend to ensure clean state
+    previewApi.pluginCloseEditor().catch(() => {});
+    previewApi.pluginUnload().catch(() => {});
+    previewApi.setPluginIsInstrument(false).catch(() => {});
+
+    // Only set webview flag when switching TO a webview project
     if (activeProject?.uiFramework === 'webview') {
-      // WebView projects need a fresh build after switching to ensure unique class names
       setWebviewNeedsFreshBuild(true);
     } else {
       setWebviewNeedsFreshBuild(false);
     }
-  }, [activeProject?.name, activeProject?.uiFramework, setLoadedPlugin]);
+  }, [activeProject?.name, activeProject?.uiFramework, setPlaying, setLoadedPlugin, setWebviewNeedsFreshBuild]);
 
-  // Listen for build completion even when panel is closed to clear webview fresh build flag
-  // This prevents the "double build" issue where user builds, then opens preview panel,
-  // but the flag is still set because the main listener wasn't running
+  // Listen for build completion even when panel is closed to update plugin availability
+  // This ensures the Plugin Viewer toggle in the header updates when builds complete
   useEffect(() => {
     // Only need this listener when panel is closed - the main listener handles open state
     if (isOpen) return;
-    if (!activeProject || activeProject.uiFramework !== 'webview') return;
+    if (!activeProject) return;
 
     const handleBuildComplete = async (event: { payload: BuildStreamEvent }) => {
       const data = event.payload;
       if (data.type !== 'done' || !data.success) return;
 
-      // Clear the fresh build flag since we just built successfully
-      setWebviewNeedsFreshBuild(false);
+      try {
+        // Get the current version
+        const version = await invoke<number>('get_current_version', {
+          projectPath: activeProject.path,
+        });
+
+        // Check if plugin file exists
+        const folderName = getFolderName(activeProject.path);
+        const pluginPath = await previewApi.getProjectPluginPath(folderName, version);
+
+        if (pluginPath) {
+          // Update plugin availability in store
+          setPluginAvailable(true);
+          setCurrentPluginVersion(version);
+        }
+
+        // Clear webview fresh build flag for webview projects
+        if (activeProject.uiFramework === 'webview') {
+          setWebviewNeedsFreshBuild(false);
+        }
+      } catch (err) {
+        console.error('Build completion handler (panel closed) failed:', err);
+      }
     };
 
     const setupListener = async () => {
@@ -682,7 +671,7 @@ export function PreviewPanel() {
     return () => {
       cleanup?.();
     };
-  }, [isOpen, activeProject]);
+  }, [isOpen, activeProject, setPluginAvailable, setCurrentPluginVersion, setWebviewNeedsFreshBuild]);
 
   // Handle play/stop
   const handleTogglePlaying = useCallback(async () => {
@@ -944,7 +933,7 @@ export function PreviewPanel() {
             <svg className="w-4 h-4 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.348a1.125 1.125 0 010 1.971l-11.54 6.347a1.125 1.125 0 01-1.667-.985V5.653z" />
             </svg>
-            <h2 className="text-sm font-semibold text-text-primary">Preview</h2>
+            <h2 className="text-sm font-semibold text-text-primary">Plugin Controls</h2>
           </div>
           <button
             onClick={() => setOpen(false)}
@@ -972,130 +961,6 @@ export function PreviewPanel() {
 
           {activeProject && (
             <>
-              {/* Plugin Viewer - at top for quick access */}
-              <div className="border-b border-border pb-2">
-                {renderSectionHeader('plugin', 'Plugin Viewer',
-                  <svg className="w-4 h-4 text-text-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 16.875h3.375m0 0h3.375m-3.375 0V13.5m0 3.375v3.375M6 10.5h2.25a2.25 2.25 0 002.25-2.25V6a2.25 2.25 0 00-2.25-2.25H6A2.25 2.25 0 003.75 6v2.25A2.25 2.25 0 006 10.5zm0 9.75h2.25A2.25 2.25 0 0010.5 18v-2.25a2.25 2.25 0 00-2.25-2.25H6a2.25 2.25 0 00-2.25 2.25V18A2.25 2.25 0 006 20.25zm9.75-9.75H18a2.25 2.25 0 002.25-2.25V6A2.25 2.25 0 0018 3.75h-2.25A2.25 2.25 0 0013.5 6v2.25a2.25 2.25 0 002.25 2.25z" />
-                  </svg>
-                )}
-                {!collapsedSections.plugin && (
-                <div className="pt-1.5">
-                  {/* Compact plugin toggle with inline status */}
-                  <div className="flex items-center justify-between gap-3 p-2 bg-bg-tertiary rounded-lg border border-border">
-                    <div className="flex items-center gap-2 min-w-0 flex-1">
-                      {/* Status indicator dot */}
-                      <div className={`w-2 h-2 rounded-full flex-shrink-0 ${
-                        loadedPlugin.status === 'active' ? 'bg-green-400' :
-                        loadedPlugin.status === 'loading' || loadedPlugin.status === 'reloading' ? 'bg-amber-400 animate-pulse' :
-                        loadedPlugin.status === 'error' ? 'bg-error' :
-                        'bg-text-muted'
-                      }`} />
-                      <div className="min-w-0 flex-1">
-                        <div className="text-xs text-text-primary truncate">
-                          {loadedPlugin.status === 'active'
-                            ? loadedPlugin.name
-                            : loadedPlugin.status === 'loading'
-                              ? 'Loading...'
-                              : loadedPlugin.status === 'reloading'
-                                ? 'Hot reloading...'
-                                : loadedPlugin.status === 'error'
-                                  ? 'Error'
-                                  : !pluginAvailable
-                                    ? 'No build available'
-                                    : `${activeProject?.name} v${currentVersion}`}
-                        </div>
-                      </div>
-                      {/* Open editor button (only when active and has editor) */}
-                      {loadedPlugin.status === 'active' && loadedPlugin.has_editor && !(webviewNeedsFreshBuild && activeProject?.uiFramework === 'webview') && (
-                        <button
-                          onClick={handleOpenEditor}
-                          className="px-1.5 py-1 rounded text-xs text-text-muted hover:text-accent hover:bg-accent/10 transition-colors flex-shrink-0 flex items-center gap-1"
-                          title="Open Plugin Window"
-                        >
-                          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                          </svg>
-                          <span>Reopen</span>
-                        </button>
-                      )}
-                    </div>
-                    {/* Toggle switch */}
-                    <button
-                      onClick={async () => {
-                        if (loadedPlugin.status === 'active') {
-                          try {
-                            await previewApi.pluginCloseEditor();
-                            await previewApi.pluginUnload();
-                            await previewApi.setPluginIsInstrument(false);
-                            // WebView plugins require a fresh build before re-enabling due to
-                            // wry class name conflicts - the class from the previous load still
-                            // exists and will crash if we try to create it again
-                            if (activeProject?.uiFramework === 'webview') {
-                              setWebviewNeedsFreshBuild(true);
-                            }
-                          } catch (err) {
-                            console.error('Failed to disable plugin viewer:', err);
-                          }
-                        } else if (loadedPlugin.status === 'unloaded' && pluginAvailable && activeProject) {
-                          setPluginLoading(true);
-                          try {
-                            // Use folder name from path, not display name
-                            const loadFolderName = getFolderName(activeProject.path);
-                            await previewApi.pluginLoadForProject(loadFolderName, currentVersion);
-                            await previewApi.setPluginIsInstrument(activeProject.template === 'instrument');
-                            if (!webviewNeedsFreshBuild || activeProject.uiFramework !== 'webview') {
-                              setTimeout(async () => {
-                                try {
-                                  const state = await previewApi.pluginGetState();
-                                  if (state.status === 'active') {
-                                    const hasEditor = await previewApi.pluginHasEditor();
-                                    if (hasEditor) {
-                                      await previewApi.pluginOpenEditor();
-                                    }
-                                  }
-                                } catch (err) {
-                                  console.error('Failed to open editor:', err);
-                                }
-                              }, 100);
-                            }
-                          } catch (err) {
-                            console.error('Failed to load plugin:', err);
-                          } finally {
-                            setPluginLoading(false);
-                          }
-                        }
-                      }}
-                      disabled={!engineInitialized || pluginLoading || loadedPlugin.status === 'loading' || loadedPlugin.status === 'reloading' || (webviewNeedsFreshBuild && activeProject?.uiFramework === 'webview' && loadedPlugin.status === 'unloaded') || !pluginAvailable}
-                      className={`relative w-9 h-5 rounded-full transition-colors flex-shrink-0 ${
-                        loadedPlugin.status === 'active'
-                          ? 'bg-accent'
-                          : 'bg-bg-elevated border border-border'
-                      } ${(!engineInitialized || pluginLoading || loadedPlugin.status === 'loading' || loadedPlugin.status === 'reloading' || (webviewNeedsFreshBuild && activeProject?.uiFramework === 'webview' && loadedPlugin.status === 'unloaded') || !pluginAvailable) ? 'opacity-50 cursor-not-allowed' : ''}`}
-                    >
-                      <span
-                        className={`absolute top-1/2 -translate-y-1/2 w-3.5 h-3.5 rounded-full bg-white shadow-sm transition-all duration-200 ${
-                          loadedPlugin.status === 'active' ? 'left-[18px]' : 'left-0.5'
-                        }`}
-                      />
-                    </button>
-                  </div>
-                  {/* Error message */}
-                  {loadedPlugin.status === 'error' && (
-                    <div className="mt-1.5 text-xs text-error">
-                      {loadedPlugin.message}
-                    </div>
-                  )}
-                  {/* WebView warning */}
-                  {webviewNeedsFreshBuild && activeProject?.uiFramework === 'webview' && loadedPlugin.status === 'unloaded' && pluginAvailable && (
-                    <div className="mt-1.5 text-xs text-amber-400">
-                      Fresh build required for WebView plugins
-                    </div>
-                  )}
-                </div>
-                )}
-              </div>
-
               {/* Plugin Type Badge */}
               <div className="flex items-center gap-2">
                 <span className="text-xs text-text-muted">Type:</span>

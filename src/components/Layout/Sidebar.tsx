@@ -1,5 +1,6 @@
 import { ProjectList } from '../Projects'
 import { useLayoutStore } from '../../stores/layoutStore'
+import { useProjectBusyStore } from '../../stores/projectBusyStore'
 
 interface SidebarProps {
     onNewPlugin: () => void
@@ -7,6 +8,8 @@ interface SidebarProps {
 
 export function Sidebar({ onNewPlugin }: SidebarProps) {
     const { sidebarCollapsed, toggleSidebar } = useLayoutStore()
+    const { buildingPath } = useProjectBusyStore()
+    const anyBuildInProgress = buildingPath !== null
 
     return (
         <aside
@@ -17,11 +20,16 @@ export function Sidebar({ onNewPlugin }: SidebarProps) {
             {/* New Plugin Button */}
             <div className={`transition-all duration-300 ${sidebarCollapsed ? 'p-2' : 'p-4'}`}>
                 <button
-                    onClick={onNewPlugin}
+                    onClick={() => !anyBuildInProgress && onNewPlugin()}
+                    disabled={anyBuildInProgress}
                     className={`${
                         sidebarCollapsed ? 'w-12 h-12 p-0 justify-center' : 'w-full px-4 py-2.5 justify-center gap-2'
-                    } flex items-center bg-accent hover:bg-accent-hover text-white font-medium rounded-xl transition-all duration-200 hover:shadow-lg hover:shadow-accent/25`}
-                    title={sidebarCollapsed ? 'New Plugin' : undefined}
+                    } flex items-center font-medium rounded-xl transition-all duration-200 ${
+                        anyBuildInProgress
+                            ? 'bg-accent/50 text-white/50 cursor-not-allowed'
+                            : 'bg-accent hover:bg-accent-hover text-white hover:shadow-lg hover:shadow-accent/25'
+                    }`}
+                    title={anyBuildInProgress ? 'Build in progress...' : sidebarCollapsed ? 'New Plugin' : undefined}
                 >
                     <svg
                         className="w-5 h-5 flex-shrink-0"
@@ -54,7 +62,7 @@ export function Sidebar({ onNewPlugin }: SidebarProps) {
             </div>
 
             {/* Project List */}
-            <div className={`flex-1 overflow-y-auto transition-all duration-300 ${sidebarCollapsed ? 'px-1' : 'px-3'} pb-3`}>
+            <div className={`flex-1 overflow-y-auto overflow-x-hidden transition-all duration-300 ${sidebarCollapsed ? 'px-1' : 'px-3'} pb-3`}>
                 <ProjectList collapsed={sidebarCollapsed} />
             </div>
 

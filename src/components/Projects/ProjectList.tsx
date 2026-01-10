@@ -67,18 +67,23 @@ export function ProjectList({ collapsed = false }: ProjectListProps) {
     return { isBusy: false, busyType: null };
   };
 
+  // Disable project selection when any build is in progress
+  const anyBuildInProgress = buildingPath !== null;
+
   return (
     <div className={collapsed ? 'space-y-1 flex flex-col items-center' : 'space-y-1'}>
       {projects.map((project) => {
         const { isBusy, busyType } = getBusyState(project.path);
+        const isCurrentProject = activeProject?.id === project.id;
         return (
           <ProjectCard
             key={project.id}
             project={project}
-            isActive={activeProject?.id === project.id}
+            isActive={isCurrentProject}
             isBusy={isBusy}
             busyType={busyType}
             collapsed={collapsed}
+            disabled={anyBuildInProgress && !isCurrentProject}
             onClick={() => selectProject(project)}
             onDelete={() => {
               // Extract folder name from path for filesystem operations

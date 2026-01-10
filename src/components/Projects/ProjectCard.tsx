@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import type { ProjectMeta } from '../../types';
 import { Modal } from '../Common/Modal';
 import { Spinner } from '../Common/Spinner';
@@ -9,13 +10,33 @@ interface ProjectCardProps {
   isBusy: boolean;
   busyType: 'claude' | 'build' | null;
   collapsed?: boolean;
+  disabled?: boolean;
   onClick: () => void;
   onDelete: () => Promise<void>;
 }
 
-export function ProjectCard({ project, isActive, isBusy, busyType, collapsed = false, onClick, onDelete }: ProjectCardProps) {
+export function ProjectCard({ project, isActive, isBusy, busyType, collapsed = false, disabled = false, onClick, onDelete }: ProjectCardProps) {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [showTooltip, setShowTooltip] = useState(false);
+  const [tooltipPosition, setTooltipPosition] = useState({ top: 0, left: 0 });
+  const cardRef = useRef<HTMLDivElement>(null);
+
+  // Truncate name for tooltip
+  const truncatedName = project.name.length > 20
+    ? project.name.slice(0, 20) + '...'
+    : project.name;
+
+  const handleMouseEnter = () => {
+    if (collapsed && cardRef.current) {
+      const rect = cardRef.current.getBoundingClientRect();
+      setTooltipPosition({
+        top: rect.top + rect.height / 2,
+        left: rect.right + 8,
+      });
+      setShowTooltip(true);
+    }
+  };
   const timeAgo = (dateStr: string) => {
     const date = new Date(dateStr);
     const now = new Date();
@@ -47,13 +68,35 @@ export function ProjectCard({ project, isActive, isBusy, busyType, collapsed = f
     }
   };
 
+  // Get icon color based on template type (green when active)
+  const getIconColor = () => {
+    if (isActive) {
+      return 'text-accent';
+    }
+    if (project.template === 'instrument') {
+      return 'text-amber-500/70';
+    }
+    return 'text-sky-500/70';
+  };
+
+  // Get icon background based on template type (green when active)
+  const getIconBg = () => {
+    if (isActive) {
+      return 'bg-accent/20';
+    }
+    if (project.template === 'instrument') {
+      return 'bg-amber-500/10';
+    }
+    return 'bg-sky-500/10';
+  };
+
   // Render icon based on template type
   const renderIcon = () => {
     if (isBusy) {
-      return <Spinner size="sm" className={isActive ? 'text-accent' : 'text-text-muted'} />;
+      return <Spinner size="sm" className={getIconColor()} />;
     }
     return project.template === 'instrument' ? (
-      <svg className={`w-5 h-5 ${isActive ? 'text-accent' : 'text-text-muted'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+      <svg className={`w-4 h-4 ${getIconColor()}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
         <rect x="2" y="4" width="20" height="16" rx="2" />
         <path d="M6 4v10M10 4v10M14 4v10M18 4v10" />
         <rect x="5" y="4" width="2" height="6" fill="currentColor" />
@@ -62,7 +105,7 @@ export function ProjectCard({ project, isActive, isBusy, busyType, collapsed = f
         <rect x="17" y="4" width="2" height="6" fill="currentColor" />
       </svg>
     ) : (
-      <svg className={`w-5 h-5 ${isActive ? 'text-accent' : 'text-text-muted'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+      <svg className={`w-4 h-4 ${getIconColor()}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
         <path strokeLinecap="round" d="M6 4v16M12 4v16M18 4v16" />
         <rect x="4" y="6" width="4" height="3" rx="1" fill="currentColor" />
         <rect x="10" y="12" width="4" height="3" rx="1" fill="currentColor" />
@@ -71,54 +114,80 @@ export function ProjectCard({ project, isActive, isBusy, busyType, collapsed = f
     );
   };
 
+  const handleClick = () => {
+    if (!disabled) {
+      onClick();
+    }
+  };
+
   return (
     <>
       <div
-        onClick={onClick}
-        className={`group text-left rounded-xl cursor-pointer transition-all duration-300 ease-in-out ${
-          collapsed ? 'w-12 h-12 p-0' : 'w-full p-3'
+        ref={cardRef}
+        onClick={handleClick}
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={() => setShowTooltip(false)}
+        className={`group text-left rounded-lg transition-all duration-200 ${
+          collapsed ? 'w-12 h-12 p-0' : 'w-full px-2.5 py-2'
         } ${
-          isActive
-            ? 'bg-accent-subtle border border-accent/30'
-            : 'hover:bg-bg-tertiary border border-transparent'
+          disabled && !isActive
+            ? 'opacity-50 cursor-not-allowed'
+            : isActive
+              ? 'bg-accent/10 cursor-pointer'
+              : 'hover:bg-bg-tertiary/50 cursor-pointer'
         }`}
-        title={collapsed ? project.name : undefined}
+        title={disabled && !collapsed ? 'Build in progress...' : undefined}
       >
-        <div className={`flex items-start transition-all duration-300 ${collapsed ? 'justify-center items-center h-full' : 'gap-3'}`}>
-          <div className={`rounded-lg flex items-center justify-center text-lg flex-shrink-0 transition-all duration-300 ${
-            collapsed ? 'w-full h-full' : 'w-9 h-9'
-          } ${
-            isActive && !collapsed ? 'bg-accent/20' : collapsed ? '' : 'bg-bg-elevated'
-          }`}>
+        {/* Tooltip for collapsed state - rendered via portal */}
+        {collapsed && showTooltip && createPortal(
+          <div
+            className="fixed z-[9999] px-2 py-1 bg-bg-elevated border border-border rounded-md shadow-lg whitespace-nowrap pointer-events-none"
+            style={{
+              top: tooltipPosition.top,
+              left: tooltipPosition.left,
+              transform: 'translateY(-50%)',
+            }}
+          >
+            <span className="text-sm text-text-primary">{truncatedName}</span>
+          </div>,
+          document.body
+        )}
+        <div className={`flex items-center transition-all duration-200 ${collapsed ? 'justify-center h-full' : 'gap-2.5'}`}>
+          {/* Icon */}
+          <div className={`rounded-md flex items-center justify-center flex-shrink-0 transition-all duration-200 ${
+            collapsed ? 'w-full h-full' : 'w-8 h-8'
+          } ${getIconBg()}`}>
             {renderIcon()}
           </div>
-          <div className={`flex-1 min-w-0 overflow-hidden transition-all duration-300 ${
-            collapsed ? 'w-0 opacity-0' : 'w-auto opacity-100 delay-100'
+
+          {/* Content */}
+          <div className={`flex-1 min-w-0 transition-all duration-200 ${
+            collapsed ? 'w-0 opacity-0' : 'w-auto opacity-100'
           }`}>
-            <div className="flex items-center gap-2">
-              <span className={`font-medium truncate whitespace-nowrap ${isActive ? 'text-accent' : 'text-text-primary'}`}>
+            {/* Top row: Name */}
+            <div className="flex items-center gap-1.5">
+              <span className={`text-sm font-medium truncate ${isActive ? 'text-accent' : 'text-text-primary'}`}>
                 {project.name}
               </span>
               {isBusy && (
-                <span className="text-xs text-text-muted flex-shrink-0 whitespace-nowrap">
-                  {busyType === 'claude' ? 'Working...' : 'Building...'}
+                <span className="text-[10px] text-amber-400 flex-shrink-0 animate-pulse">
+                  {busyType === 'claude' ? 'AI' : 'Build'}
                 </span>
               )}
             </div>
-            <div className="text-xs text-text-muted truncate mt-0.5 whitespace-nowrap">
-              {project.description || 'No description'}
-            </div>
-            <div className="flex items-center justify-between mt-1">
-              <span className="text-xs text-text-muted whitespace-nowrap">
+
+            {/* Bottom row: Time + Delete */}
+            <div className="flex items-center justify-between mt-0.5">
+              <span className="text-[11px] text-text-muted">
                 {timeAgo(project.updated_at)}
               </span>
               <button
                 onClick={handleDeleteClick}
-                className="opacity-0 group-hover:opacity-100 p-1 -mr-1 rounded text-text-muted hover:text-error hover:bg-error/10 transition-all"
+                className="opacity-0 group-hover:opacity-100 p-0.5 -mr-0.5 ml-1 rounded text-text-muted hover:text-error transition-opacity flex-shrink-0"
                 title="Delete project"
               >
-                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
                 </svg>
               </button>
             </div>

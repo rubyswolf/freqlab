@@ -62,7 +62,12 @@ export function MainLayout() {
   const { addToast } = useToastStore();
   const { queueMessage } = useChatStore();
   const { buildingPath, setBuildingPath, clearBuildingIfMatch, isClaudeBusy } = useProjectBusyStore();
-  const { isOpen: isPreviewOpen } = usePreviewStore();
+  const {
+    isOpen: isPreviewOpen,
+    pluginAvailable,
+    webviewNeedsFreshBuild,
+    setPluginAvailable,
+  } = usePreviewStore();
 
   // Per-project output - use activeProject's path
   const { addLine, setActive, clear } = useProjectOutput(activeProject?.path ?? null);
@@ -77,13 +82,21 @@ export function MainLayout() {
   const buildDisabled = thisProjectClaudeBusy || anyBuildInProgress;
   // Publish disabled if: build disabled OR no build exists for current version
   const publishDisabled = buildDisabled || !hasBuild;
+  // Build should be highlighted (green) when plugin viewer needs a build
+  const needsWebviewRebuild = webviewNeedsFreshBuild && activeProject?.uiFramework === 'webview';
+  const buildHighlighted = !pluginAvailable || needsWebviewRebuild;
 
   // Check if a build exists for the current version
+  // Also called as onVersionChange - always resets plugin availability since code changed
   const checkBuildExists = useCallback(async () => {
     if (!activeProject) {
       setHasBuild(false);
+      setPluginAvailable(false);
       return;
     }
+
+    // Always reset plugin availability on version change - code changed, need fresh build
+    setPluginAvailable(false);
 
     try {
       const version = await invoke<number>('get_current_version', {
@@ -99,7 +112,7 @@ export function MainLayout() {
     } catch {
       setHasBuild(false);
     }
-  }, [activeProject]);
+  }, [activeProject, setPluginAvailable]);
 
   // Check build status when project changes and clear any stale error
   useEffect(() => {
@@ -346,7 +359,13 @@ export function MainLayout() {
                     <button
                       onClick={handleBuild}
                       disabled={buildDisabled}
-                      className="flex items-center gap-2 px-3 py-1.5 text-sm text-white bg-accent hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed rounded-lg transition-colors"
+                      className={`flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-lg border transition-all duration-200 ${
+                        buildDisabled
+                          ? 'bg-bg-tertiary text-text-muted border-border opacity-50 cursor-not-allowed'
+                          : buildHighlighted
+                            ? 'bg-accent hover:bg-accent-hover text-white border-accent'
+                            : 'bg-bg-tertiary text-text-primary hover:bg-accent/20 hover:text-accent border-border hover:border-accent/30'
+                      }`}
                       title={buildDisabled ? (anyBuildInProgress ? 'Build in progress...' : 'Working on this project...') : 'Build plugin'}
                     >
                       {isBuilding ? (
@@ -369,7 +388,11 @@ export function MainLayout() {
                     <button
                       onClick={() => setIsPublishModalOpen(true)}
                       disabled={publishDisabled}
-                      className="flex items-center gap-2 px-3 py-1.5 text-sm text-text-secondary hover:text-text-primary bg-bg-tertiary hover:bg-bg-elevated disabled:opacity-50 disabled:cursor-not-allowed rounded-lg border border-border transition-colors"
+                      className={`flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-lg border transition-all duration-200 ${
+                        publishDisabled
+                          ? 'bg-bg-tertiary text-text-muted border-border opacity-50 cursor-not-allowed'
+                          : 'bg-bg-tertiary text-text-primary hover:bg-accent/20 hover:text-accent border-border hover:border-accent/30'
+                      }`}
                       title={
                         !hasBuild
                           ? 'Build the plugin first before publishing'
@@ -388,9 +411,16 @@ export function MainLayout() {
                     {/* Quick Actions Dropdown */}
                     <div className="relative" ref={quickActionsRef}>
                       <button
-                        onClick={() => setShowQuickActions(!showQuickActions)}
-                        className="p-2 rounded-lg text-text-muted hover:text-text-primary hover:bg-bg-elevated border border-transparent hover:border-border transition-colors"
-                        title="More actions"
+                        onClick={() => !anyBuildInProgress && setShowQuickActions(!showQuickActions)}
+                        disabled={anyBuildInProgress}
+                        className={`p-2 rounded-lg transition-all duration-200 ${
+                          anyBuildInProgress
+                            ? 'bg-bg-tertiary text-text-muted border border-border opacity-50 cursor-not-allowed'
+                            : showQuickActions
+                              ? 'bg-accent text-white'
+                              : 'bg-bg-tertiary text-text-primary hover:bg-accent/20 hover:text-accent border border-border hover:border-accent/30'
+                        }`}
+                        title={anyBuildInProgress ? 'Build in progress...' : 'More actions'}
                       >
                         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                           <path strokeLinecap="round" strokeLinejoin="round" d="M12 6.75a.75.75 0 110-1.5.75.75 0 010 1.5zM12 12.75a.75.75 0 110-1.5.75.75 0 010 1.5zM12 18.75a.75.75 0 110-1.5.75.75 0 010 1.5z" />
