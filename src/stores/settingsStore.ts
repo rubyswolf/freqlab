@@ -17,6 +17,7 @@ const defaultCustomColors: CustomThemeColors = {
   bgTertiary: '#1f1f1f',
   textPrimary: '#fafafa',
   textSecondary: '#a1a1aa',
+  chatUser: '#3b82f6',
 };
 
 const defaultAudioSettings: AudioSettings = {

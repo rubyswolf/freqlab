@@ -21,6 +21,8 @@
   --color-error-subtle: rgba(239, 68, 68, 0.15);
   --color-border: var(--theme-border, #27272a);
   --color-border-subtle: var(--theme-border-subtle, #1f1f1f);
+  --color-chat-user: var(--theme-chat-user, #3b82f6);
+  --color-chat-user-hover: var(--theme-chat-user-hover, #2563eb);
 }
 
 /* Dark theme values */
@@ -38,6 +40,8 @@
   --theme-accent-subtle: rgba(76, 219, 153, 0.15);
   --theme-border: #27272a;
   --theme-border-subtle: #1f1f1f;
+  --theme-chat-user: #3b82f6;
+  --theme-chat-user-hover: #2563eb;
 }
 
 /* Light theme values */
@@ -54,6 +58,8 @@
   --theme-accent-subtle: rgba(40, 166, 109, 0.12);
   --theme-border: #e5e5e5;
   --theme-border-subtle: #f0f0f0;
+  --theme-chat-user: #2563eb;
+  --theme-chat-user-hover: #1d4ed8;
 }
 
 /* Custom theme - colors are set via JS */

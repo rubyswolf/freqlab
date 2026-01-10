@@ -33,6 +33,7 @@ export interface CustomThemeColors {
   bgTertiary: string;
   textPrimary: string;
   textSecondary: string;
+  chatUser: string;
 }
 
 export interface AudioSettings {

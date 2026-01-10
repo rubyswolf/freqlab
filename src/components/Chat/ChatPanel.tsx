@@ -489,6 +489,11 @@ export function ChatPanel({ project, onVersionChange }: ChatPanelProps) {
       // (which would cause the new message to appear greyed out momentarily)
       if (nextVersion) {
         setActiveVersion(nextVersion);
+        // Signal that this new version needs to be built (include projectPath for multi-project safety)
+        usePreviewStore.getState().setPendingBuildVersion({
+          projectPath: project.path,
+          version: nextVersion,
+        });
       }
 
       // Mark state as authoritative BEFORE async saves - prevents race condition
@@ -614,6 +619,8 @@ export function ChatPanel({ project, onVersionChange }: ChatPanelProps) {
 
       // Mark that preview needs a fresh build (source code changed but plugin binary is stale)
       usePreviewStore.getState().setBuildStatus('needs_rebuild');
+      // Clear any pending build version since we've changed versions manually
+      usePreviewStore.getState().setPendingBuildVersion(null);
 
       // Notify parent that version changed so it can update build status
       onVersionChange?.();
@@ -663,7 +670,7 @@ export function ChatPanel({ project, onVersionChange }: ChatPanelProps) {
       </div>
 
       {/* Messages area */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-black/[0.15]">
         {messages.length === 0 && !isLoading && isHistoryLoaded ? (
           <div className="h-full flex items-center justify-center">
             <div className="text-center max-w-md">
@@ -708,11 +715,11 @@ export function ChatPanel({ project, onVersionChange }: ChatPanelProps) {
 
               // In conversational mode, render as phone-style chat bubbles
               if (chatStyle === 'conversational') {
-                // User messages: green bubble on the right
+                // User messages: blue bubble on the right
                 if (message.role === 'user') {
                   return (
                     <div key={message.id} className={`flex justify-end animate-chat-bubble ${isInactiveVersion ? 'opacity-50' : ''}`}>
-                      <div className="max-w-[85%] rounded-2xl rounded-br-md px-4 py-2.5 bg-accent text-white">
+                      <div className="max-w-[85%] rounded-2xl rounded-br-md px-4 py-2.5 bg-chat-user text-white">
                         <div className="text-sm whitespace-pre-wrap break-words">{message.content}</div>
                         <div className="text-[10px] text-white/60 text-right mt-1">
                           {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}

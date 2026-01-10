@@ -61,8 +61,11 @@ export function ProjectActionBar({
   );
   const pluginAvailable = usePreviewStore((s) => s.pluginAvailable);
   const webviewNeedsFreshBuild = usePreviewStore((s) => s.webviewNeedsFreshBuild);
+  const currentPluginVersion = usePreviewStore((s) => s.currentPluginVersion);
+  const pendingBuildVersion = usePreviewStore((s) => s.pendingBuildVersion);
   const autoBuildEnabled = useProjectStore((s) => s.autoBuildPaths.includes(project.path));
   const setAutoBuild = useProjectStore.getState().setAutoBuild;
+  const setPendingBuildVersion = usePreviewStore.getState().setPendingBuildVersion;
 
   // === STABLE ACTION REFERENCES ===
   const addToast = useToastStore.getState().addToast;
@@ -79,7 +82,11 @@ export function ProjectActionBar({
   const buildDisabled = thisProjectClaudeBusy || anyBuildInProgress;
   const publishDisabled = buildDisabled || !hasBuild;
   const needsWebviewRebuild = webviewNeedsFreshBuild && project.uiFramework === 'webview';
-  const buildHighlighted = !pluginAvailable || needsWebviewRebuild;
+  // Claude created a new version that hasn't been built yet (check projectPath matches to avoid cross-project glow)
+  const hasNewVersionFromClaude = pendingBuildVersion !== null &&
+    pendingBuildVersion.projectPath === project.path &&
+    pendingBuildVersion.version !== currentPluginVersion;
+  const buildHighlighted = !pluginAvailable || needsWebviewRebuild || hasNewVersionFromClaude;
 
   // Clear error when project changes
   useEffect(() => {
@@ -152,6 +159,8 @@ export function ProjectActionBar({
         addLine('');
         addLine('Build successful!');
         setLastBuildError(null);
+        // Clear pending build version since we just built
+        setPendingBuildVersion(null);
         onBuildComplete();
         addToast({
           type: 'success',
@@ -248,11 +257,13 @@ export function ProjectActionBar({
         className={`flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-lg border transition-all duration-200 ${
           buildDisabled
             ? 'bg-bg-tertiary text-text-muted border-border opacity-50 cursor-not-allowed'
-            : buildHighlighted
-              ? 'bg-accent hover:bg-accent-hover text-white border-accent'
-              : 'bg-bg-tertiary text-text-primary hover:bg-accent/20 hover:text-accent border-border hover:border-accent/30'
+            : hasNewVersionFromClaude
+              ? 'bg-accent/15 text-accent border border-accent/50 hover:bg-accent/25 hover:border-accent shadow-[0_0_12px_rgba(16,185,129,0.4)] animate-pulse'
+              : buildHighlighted
+                ? 'bg-accent hover:bg-accent-hover text-white border-accent'
+                : 'bg-bg-tertiary text-text-primary hover:bg-accent/20 hover:text-accent border-border hover:border-accent/30'
         }`}
-        title={buildDisabled ? (anyBuildInProgress ? 'Build in progress...' : 'Working on this project...') : 'Build plugin'}
+        title={buildDisabled ? (anyBuildInProgress ? 'Build in progress...' : 'Working on this project...') : hasNewVersionFromClaude ? `Build v${pendingBuildVersion?.version} from Claude` : 'Build plugin'}
       >
         {isBuilding ? (
           <>

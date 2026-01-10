@@ -21,7 +21,7 @@ export const ChatMessage = memo(function ChatMessage({ message, isInactive, isCu
       <div
         className={`max-w-[80%] rounded-2xl px-4 py-2.5 ${
           isUser
-            ? 'bg-accent text-white rounded-br-md'
+            ? 'bg-chat-user text-white rounded-br-md'
             : 'bg-bg-tertiary text-text-primary rounded-bl-md'
         } ${isGreyedOut ? 'border border-dashed border-text-muted/30' : ''} ${isCurrentVersion ? 'ring-2 ring-accent/50' : ''}`}
       >
@@ -77,7 +77,7 @@ export const ChatMessage = memo(function ChatMessage({ message, isInactive, isCu
           {onVersionClick && !isUser && message.version && (
             <button
               onClick={onVersionClick}
-              className="text-xs hover:text-accent transition-colors flex items-center gap-1"
+              className="ml-3 text-xs hover:text-accent transition-colors flex items-center gap-1"
             >
               {isGreyedOut ? (
                 <>

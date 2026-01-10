@@ -70,27 +70,25 @@ export const ProjectCard = memo(function ProjectCard({ project, isActive, isBusy
   };
 
   // Get icon color based on template type (green when active, muted when inactive)
+  // Collapsed mode: neutral until hovered, then shows type color
   const getIconColor = () => {
     if (isActive) {
       return 'text-accent';
     }
-    // More subtle colors for inactive items
-    if (project.template === 'instrument') {
-      return 'text-amber-600/40';
-    }
-    return 'text-sky-600/40';
+    // Neutral color, but hover shows type color (amber for instrument, blue for effect)
+    const hoverColor = project.template === 'instrument' ? 'group-hover:text-amber-400' : 'group-hover:text-blue-400';
+    return `text-text-muted ${hoverColor}`;
   };
 
   // Get icon background based on template type (green when active, subtle when inactive)
+  // Collapsed mode: neutral background until hovered, then shows type color
   const getIconBg = () => {
     if (isActive) {
       return 'bg-accent/20';
     }
-    // Very subtle backgrounds for inactive items
-    if (project.template === 'instrument') {
-      return 'bg-amber-500/5';
-    }
-    return 'bg-sky-500/5';
+    // Neutral background, hover shows type color hint
+    const hoverBg = project.template === 'instrument' ? 'group-hover:bg-amber-500/15' : 'group-hover:bg-blue-500/15';
+    return `bg-bg-tertiary ${hoverBg}`;
   };
 
   // Render icon based on template type
@@ -144,14 +142,18 @@ export const ProjectCard = memo(function ProjectCard({ project, isActive, isBusy
         {/* Tooltip for collapsed state - rendered via portal */}
         {collapsed && showTooltip && createPortal(
           <div
-            className="fixed z-[9999] px-2 py-1 bg-bg-elevated border border-border rounded-md shadow-lg whitespace-nowrap pointer-events-none"
+            className={`fixed z-[9999] px-2 py-1 bg-bg-elevated rounded-md shadow-lg whitespace-nowrap pointer-events-none border ${
+              project.template === 'instrument' ? 'border-amber-500/50' : 'border-blue-500/50'
+            }`}
             style={{
               top: tooltipPosition.top,
               left: tooltipPosition.left,
               transform: 'translateY(-50%)',
             }}
           >
-            <span className="text-sm text-text-primary">{truncatedName}</span>
+            <span className={`text-sm ${
+              project.template === 'instrument' ? 'text-amber-400' : 'text-blue-400'
+            }`}>{truncatedName}</span>
           </div>,
           document.body
         )}

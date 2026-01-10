@@ -106,6 +106,10 @@ interface PreviewState {
   engineInitialized: boolean;
   editorOpen: boolean;
 
+  // Pending build version (set when Claude creates a new version, cleared on build success)
+  // Includes projectPath to ensure we only show glow for the correct project
+  pendingBuildVersion: { projectPath: string; version: number } | null;
+
   // Actions
   setOpen: (open: boolean) => void;
   toggleOpen: () => void;
@@ -133,6 +137,7 @@ interface PreviewState {
   setPluginLoading: (loading: boolean) => void;
   setEngineInitialized: (initialized: boolean) => void;
   setEditorOpen: (open: boolean) => void;
+  setPendingBuildVersion: (pending: { projectPath: string; version: number } | null) => void;
   reset: () => void;
 }
 
@@ -180,11 +185,12 @@ const initialState = {
   parameters: [] as PluginParameter[],
   demoSamples: [] as DemoSample[],
   pluginAvailable: false,
-  currentPluginVersion: 1,
+  currentPluginVersion: 0,  // 0 = no plugin loaded yet, allows first Claude version to trigger glow
   webviewNeedsFreshBuild: false,
   pluginLoading: false,
   engineInitialized: false,
   editorOpen: false,
+  pendingBuildVersion: null,
 };
 
 export const usePreviewStore = create<PreviewState>()((set) => ({
@@ -235,6 +241,7 @@ export const usePreviewStore = create<PreviewState>()((set) => ({
   setPluginLoading: (loading) => set({ pluginLoading: loading }),
   setEngineInitialized: (initialized) => set({ engineInitialized: initialized }),
   setEditorOpen: (open) => set({ editorOpen: open }),
+  setPendingBuildVersion: (pending) => set({ pendingBuildVersion: pending }),
 
   reset: () => set(initialState),
 }));
