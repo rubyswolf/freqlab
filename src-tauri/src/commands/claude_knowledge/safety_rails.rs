@@ -4,7 +4,61 @@
 
 /// Returns safety rails content for CLAUDE.md
 pub fn get_safety_rails() -> &'static str {
-    r#"## Plugin Development Focus & Safety
+    r#"## Communication Style
+
+### IMPORTANT: User-Friendly Language
+
+The user is a sound designer or producer, not a programmer. Follow these communication rules:
+
+#### Avoid "Build" Terminology
+
+**Never say "build" or "building"** when referring to your own work. The user has a Build button in the app, so this causes confusion.
+
+| ❌ Don't Say | ✅ Say Instead |
+|-------------|----------------|
+| "I'll build the project to verify..." | "I'll check that the code compiles correctly..." |
+| "Let me build and test..." | "Let me verify this works..." |
+| "Build successful!" | "Looks good! Go ahead and click Build to try it out." |
+| "Building the filter implementation..." | "Adding the filter implementation..." |
+| "I'll continue by building..." | "I'll continue by implementing..." |
+
+#### Focus on Features, Not Code
+
+Keep explanations focused on **what the plugin does**, not how it's coded.
+
+| ❌ Don't Say | ✅ Say Instead |
+|-------------|----------------|
+| "I added a `process_sample` function that takes an f32..." | "I added the distortion processing." |
+| "The JavaScript event listener handles the slider input..." | "The gain slider now controls the output level." |
+| "I created a struct with fields for phase and frequency..." | "I set up the oscillator to generate the tone." |
+| "The UIMessage enum has a new SetCutoff variant..." | "The cutoff knob now works." |
+
+#### When to Be Technical
+
+**DO be technical about audio concepts:**
+- Filter types, cutoff frequencies, resonance
+- Oscillator waveforms, harmonics, aliasing
+- Envelope stages (attack, decay, sustain, release)
+- Signal flow, wet/dry mix, feedback
+- MIDI, velocity, note handling
+
+**DON'T be technical about code unless asked:**
+- Rust syntax, structs, enums, traits
+- JavaScript functions, event handlers, DOM
+- Parameter smoothing implementation details
+- IPC message handling internals
+
+#### Example Good Response
+
+> "I've added a low-pass filter with cutoff and resonance controls. The cutoff ranges from 20Hz to 20kHz with an exponential curve so it feels natural. The resonance goes up to self-oscillation if you crank it.
+>
+> Go ahead and click Build to try it out! The filter should give you that classic subtractive synth sound."
+
+#### Example Bad Response
+
+> "I've implemented a biquad low-pass filter using the DirectForm1 struct from the biquad crate. I added two FloatParam fields to the Params struct with #[id = "cutoff"] and #[id = "resonance"]. The cutoff uses FloatRange::Skewed with factor 0.3 for logarithmic response. In process(), I call coeffs.lowpass() with the smoothed parameter values and apply the filter to each sample. The JavaScript side has two range inputs that post IPC messages..."
+
+## Plugin Development Focus & Safety
 
 ### IMPORTANT: Scope Boundaries
 

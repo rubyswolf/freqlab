@@ -1,3 +1,5 @@
+# kept this incase anyone want to vibe with this further
+
 # freqlab
 
 A Tauri 2.x desktop app for creating VST/CLAP audio plugins with AI assistance. Users describe what they want in natural language, Claude modifies the plugin code, and the app builds and previews the result in real-time.
@@ -6,15 +8,15 @@ A Tauri 2.x desktop app for creating VST/CLAP audio plugins with AI assistance. 
 
 ## Tech Stack
 
-| Layer | Technology | Purpose |
-|-------|------------|---------|
-| **Framework** | Tauri 2.x | Lightweight desktop app, Rust backend pairs with nih-plug |
-| **Frontend** | React 18 + TypeScript | Component-based UI |
-| **Styling** | Tailwind CSS | Dark theme, custom color support |
-| **State** | Zustand | Persisted stores for settings, projects, UI state |
-| **AI** | Claude Code CLI | Non-interactive streaming mode |
-| **Audio** | nih-plug (Rust) | VST3/CLAP plugin framework |
-| **Preview** | cpal + CLAP hosting | Real-time audio processing with hot reload |
+| Layer         | Technology            | Purpose                                                   |
+| ------------- | --------------------- | --------------------------------------------------------- |
+| **Framework** | Tauri 2.x             | Lightweight desktop app, Rust backend pairs with nih-plug |
+| **Frontend**  | React 18 + TypeScript | Component-based UI                                        |
+| **Styling**   | Tailwind CSS          | Dark theme, custom color support                          |
+| **State**     | Zustand               | Persisted stores for settings, projects, UI state         |
+| **AI**        | Claude Code CLI       | Non-interactive streaming mode                            |
+| **Audio**     | nih-plug (Rust)       | VST3/CLAP plugin framework                                |
+| **Preview**   | cpal + CLAP hosting   | Real-time audio processing with hot reload                |
 
 ---
 
@@ -132,12 +134,14 @@ src-tauri/                    # Rust backend
 ### Data Flow
 
 **Creating a Plugin:**
+
 1. User fills NewProjectModal (name, description, template, UI framework)
 2. `create_project` command: creates directory, generates template, inits git
 3. Template includes: Cargo.toml, src/lib.rs, ui.html (if webview)
 4. Frontend updates projectStore, shows project in sidebar
 
 **Chat with Claude:**
+
 1. User types message → `send_to_claude` command
 2. Rust spawns Claude CLI: `claude -p "message" --output-format stream-json ...`
 3. Parses JSON events, emits `claude-stream` events to frontend
@@ -146,12 +150,14 @@ src-tauri/                    # Rust backend
 6. Saves chat history to `.vstworkshop/chat.json`
 
 **Building:**
+
 1. User clicks Build → `build_project` command
 2. Runs `cargo xtask bundle {package_name}` from workspace root
 3. Streams output via `build-stream` events
 4. Artifacts placed in `output/{name}/v{version}/`
 
 **Audio Preview:**
+
 1. PreviewPanel initializes audio engine
 2. User selects input source (signal/sample/live input)
 3. Engine loads CLAP plugin, processes audio in real-time
@@ -159,6 +165,7 @@ src-tauri/                    # Rust backend
 5. Spectrum analyzer and waveform display update in real-time
 
 **MIDI for Instruments:**
+
 1. User selects MIDI source (keyboard/pattern/file/hardware device)
 2. MIDI events queued via lock-free ring buffer
 3. Plugin receives NoteOn/NoteOff/CC events during process()
@@ -169,16 +176,16 @@ src-tauri/                    # Rust backend
 
 ## Zustand Stores
 
-| Store | Key State | Persistence |
-|-------|-----------|-------------|
-| `settingsStore` | workspacePath, theme, customColors, vendorName, dawPaths, audioSettings | localStorage |
-| `projectStore` | projects[], activeProject, loading | None |
-| `chatStore` | pendingMessage | None |
-| `outputStore` | outputs (Map<projectId, lines[]>) | None |
-| `projectBusyStore` | claudeProjects (Set), buildingProject | None |
-| `layoutStore` | sidebarCollapsed | None |
-| `previewStore` | engineInitialized, pluginLoaded, inputSource, outputLevels | None |
-| `toastStore` | toasts[] | None |
+| Store              | Key State                                                               | Persistence  |
+| ------------------ | ----------------------------------------------------------------------- | ------------ |
+| `settingsStore`    | workspacePath, theme, customColors, vendorName, dawPaths, audioSettings | localStorage |
+| `projectStore`     | projects[], activeProject, loading                                      | None         |
+| `chatStore`        | pendingMessage                                                          | None         |
+| `outputStore`      | outputs (Map<projectId, lines[]>)                                       | None         |
+| `projectBusyStore` | claudeProjects (Set), buildingProject                                   | None         |
+| `layoutStore`      | sidebarCollapsed                                                        | None         |
+| `previewStore`     | engineInitialized, pluginLoaded, inputSource, outputLevels              | None         |
+| `toastStore`       | toasts[]                                                                | None         |
 
 ---
 
@@ -188,33 +195,33 @@ src-tauri/                    # Rust backend
 // Key interfaces from src/types/index.ts
 
 interface ProjectMeta {
-  id: string;
-  name: string;
-  description: string;
-  template?: 'effect' | 'instrument';
-  uiFramework?: 'webview' | 'egui' | 'native';
-  components?: string[];  // Starter components
-  created_at: string;
-  updated_at: string;
-  path: string;
+    id: string
+    name: string
+    description: string
+    template?: 'effect' | 'instrument'
+    uiFramework?: 'webview' | 'egui' | 'native'
+    components?: string[] // Starter components
+    created_at: string
+    updated_at: string
+    path: string
 }
 
 interface ChatMessage {
-  id: string;
-  role: 'user' | 'assistant';
-  content: string;
-  timestamp: string;
-  filesModified?: string[];
-  commitHash?: string;
-  version?: number;  // Auto-incremented on file changes
-  reverted: boolean;
-  attachments?: FileAttachment[];
+    id: string
+    role: 'user' | 'assistant'
+    content: string
+    timestamp: string
+    filesModified?: string[]
+    commitHash?: string
+    version?: number // Auto-incremented on file changes
+    reverted: boolean
+    attachments?: FileAttachment[]
 }
 
 interface AudioSettings {
-  outputDevice: string | null;  // null = system default
-  sampleRate: number;           // Default: 48000
-  bufferSize: number;           // Default: 512
+    outputDevice: string | null // null = system default
+    sampleRate: number // Default: 48000
+    bufferSize: number // Default: 512
 }
 ```
 
@@ -223,125 +230,141 @@ interface AudioSettings {
 ## Tauri Commands
 
 ### Project Management
-- `create_project(input: CreateProjectInput)` → `ProjectMeta`
-- `list_projects()` → `Vec<ProjectMeta>`
-- `get_project(name: String)` → `ProjectMeta`
-- `delete_project(name: String)` → `()`
+
+-   `create_project(input: CreateProjectInput)` → `ProjectMeta`
+-   `list_projects()` → `Vec<ProjectMeta>`
+-   `get_project(name: String)` → `ProjectMeta`
+-   `delete_project(name: String)` → `()`
 
 ### Claude Integration
-- `send_to_claude(project_path, message, system_prompt, attachments)` → streams `claude-stream` events
+
+-   `send_to_claude(project_path, message, system_prompt, attachments)` → streams `claude-stream` events
 
 ### Build System
-- `build_project(project_path, project_name, version)` → streams `build-stream` events
+
+-   `build_project(project_path, project_name, version)` → streams `build-stream` events
 
 ### Git Operations
-- `init_repo(project_path)` → `()`
-- `commit_changes(project_path, message)` → `String` (commit hash)
-- `revert_to_commit(project_path, commit_hash)` → `()`
+
+-   `init_repo(project_path)` → `()`
+-   `commit_changes(project_path, message)` → `String` (commit hash)
+-   `revert_to_commit(project_path, commit_hash)` → `()`
 
 ### Chat Persistence
-- `save_chat_history(project_path, messages, active_version)` → `()`
-- `load_chat_history(project_path)` → `ChatState`
-- `set_active_version(project_path, version)` → `()`
+
+-   `save_chat_history(project_path, messages, active_version)` → `()`
+-   `load_chat_history(project_path)` → `ChatState`
+-   `set_active_version(project_path, version)` → `()`
 
 ### Audio Preview (in commands/preview.rs)
-- `init_audio_engine(sample_rate, buffer_size, device)` → `()`
-- `load_plugin(plugin_path)` → `()`
-- `set_signal_type(signal_type, params)` → `()`
-- `load_sample(sample_path)` → `()`
-- `start_playback()` / `stop_playback()` → `()`
-- `get_output_levels()` → `OutputLevels` (includes spectrum, waveform, dB values)
-- `list_audio_devices()` → `Vec<AudioDevice>`
-- `get_input_devices()` → `Vec<AudioDeviceInfo>`
-- `preview_set_live_input(device_name, chunk_size)` → `()`
-- `plugin_open_editor()` / `plugin_close_editor()` → `()`
+
+-   `init_audio_engine(sample_rate, buffer_size, device)` → `()`
+-   `load_plugin(plugin_path)` → `()`
+-   `set_signal_type(signal_type, params)` → `()`
+-   `load_sample(sample_path)` → `()`
+-   `start_playback()` / `stop_playback()` → `()`
+-   `get_output_levels()` → `OutputLevels` (includes spectrum, waveform, dB values)
+-   `list_audio_devices()` → `Vec<AudioDevice>`
+-   `get_input_devices()` → `Vec<AudioDeviceInfo>`
+-   `preview_set_live_input(device_name, chunk_size)` → `()`
+-   `plugin_open_editor()` / `plugin_close_editor()` → `()`
 
 ### MIDI (in commands/preview.rs)
-- `midi_note_on(note, velocity)` / `midi_note_off(note)` → `()`
-- `midi_cc(controller, value)` → `()`
-- `midi_pitch_bend(value)` → `()`
-- `set_midi_pattern(pattern, tempo, loop)` → `()`
-- `start_midi_pattern()` / `stop_midi_pattern()` → `()`
-- `load_midi_file(path)` → `MidiFileInfo`
-- `start_midi_file()` / `stop_midi_file()` → `()`
-- `list_midi_devices()` → `Vec<MidiDeviceInfo>`
-- `connect_midi_device(index)` / `disconnect_midi_device()` → `()`
+
+-   `midi_note_on(note, velocity)` / `midi_note_off(note)` → `()`
+-   `midi_cc(controller, value)` → `()`
+-   `midi_pitch_bend(value)` → `()`
+-   `set_midi_pattern(pattern, tempo, loop)` → `()`
+-   `start_midi_pattern()` / `stop_midi_pattern()` → `()`
+-   `load_midi_file(path)` → `MidiFileInfo`
+-   `start_midi_file()` / `stop_midi_file()` → `()`
+-   `list_midi_devices()` → `Vec<MidiDeviceInfo>`
+-   `connect_midi_device(index)` / `disconnect_midi_device()` → `()`
 
 ### Publishing
-- `publish_plugin(project_path, version, daw, format)` → copies to DAW folder
+
+-   `publish_plugin(project_path, version, daw, format)` → copies to DAW folder
 
 ### Sharing
-- `export_project(project_path)` → zip file path
-- `import_project(zip_path)` → `ProjectMeta`
+
+-   `export_project(project_path)` → zip file path
+-   `import_project(zip_path)` → `ProjectMeta`
 
 ---
 
 ## File Locations
 
-| Data | Location |
-|------|----------|
-| Workspace root | `~/VSTWorkshop/` |
-| Projects | `~/VSTWorkshop/projects/{name}/` |
-| Built plugins | `~/VSTWorkshop/output/{name}/v{version}/` |
-| Chat history | `{project}/.vstworkshop/chat.json` |
+| Data           | Location                                    |
+| -------------- | ------------------------------------------- |
+| Workspace root | `~/VSTWorkshop/`                            |
+| Projects       | `~/VSTWorkshop/projects/{name}/`            |
+| Built plugins  | `~/VSTWorkshop/output/{name}/v{version}/`   |
+| Chat history   | `{project}/.vstworkshop/chat.json`          |
 | Claude session | `{project}/.vstworkshop/claude_session.txt` |
-| Attachments | `{project}/.vstworkshop/attachments/` |
-| App config | Browser localStorage (`freqlab-settings`) |
+| Attachments    | `{project}/.vstworkshop/attachments/`       |
+| App config     | Browser localStorage (`freqlab-settings`)   |
 
 ---
 
 ## Implementation Phases
 
 ### Phase 1: Foundation ✅
-- Tauri + React + TypeScript scaffold
-- Tailwind CSS with dark theme
-- Prerequisites check system
-- Welcome wizard flow
+
+-   Tauri + React + TypeScript scaffold
+-   Tailwind CSS with dark theme
+-   Prerequisites check system
+-   Welcome wizard flow
 
 ### Phase 2: Project Management + Claude Integration ✅
-- Project creation with nih-plug templates (effect/instrument × webview/egui/native)
-- Project list in sidebar
-- Claude Code CLI integration with streaming
-- Chat interface with markdown support
+
+-   Project creation with nih-plug templates (effect/instrument × webview/egui/native)
+-   Project list in sidebar
+-   Claude Code CLI integration with streaming
+-   Chat interface with markdown support
 
 ### Phase 3: Build System ✅
-- Shared Cargo workspace at `~/VSTWorkshop/`
-- `cargo xtask bundle` execution from workspace root
-- Build output streaming to output panel
-- Toast notifications for success/failure
-- "Fix with Claude" sends build errors to chat
-- Versioned output folders: `output/{name}/v{version}/`
+
+-   Shared Cargo workspace at `~/VSTWorkshop/`
+-   `cargo xtask bundle` execution from workspace root
+-   Build output streaming to output panel
+-   Toast notifications for success/failure
+-   "Fix with Claude" sends build errors to chat
+-   Versioned output folders: `output/{name}/v{version}/`
 
 ### Phase 4: Version Control ✅
-- Git init on project creation
-- Auto-commit after Claude edits
-- "Revert to here" on chat messages
-- Visual dimming of reverted messages
-- Persistent chat history with activeVersion tracking
-- Session persistence (one per project)
+
+-   Git init on project creation
+-   Auto-commit after Claude edits
+-   "Revert to here" on chat messages
+-   Visual dimming of reverted messages
+-   Persistent chat history with activeVersion tracking
+-   Session persistence (one per project)
 
 ### Phase 5: Audio Preview ✅
-- CLAP plugin hosting with hot reload
-- Test signal generators (sine, noise, sweep, impulse, chirp)
-- Sample file playback (WAV, MP3, AAC)
-- Real-time level metering
-- Audio device selection
+
+-   CLAP plugin hosting with hot reload
+-   Test signal generators (sine, noise, sweep, impulse, chirp)
+-   Sample file playback (WAV, MP3, AAC)
+-   Real-time level metering
+-   Audio device selection
 
 ### Phase 6: Settings & Polish ✅
-- Settings panel (audio, branding, DAW paths, theme)
-- Custom theme colors
-- DAW plugin path configuration
-- Vendor branding (name, URL, email)
-- Project import/export (zip)
-- File attachments in chat
-- Markdown rendering in chat
+
+-   Settings panel (audio, branding, DAW paths, theme)
+-   Custom theme colors
+-   DAW plugin path configuration
+-   Vendor branding (name, URL, email)
+-   Project import/export (zip)
+-   File attachments in chat
+-   Markdown rendering in chat
 
 ### Phase 7: Future
-- Changelog generation from commits
-- Version bump modal with release notes
-- DAW setup guides
-- Keyboard shortcuts (expand)
-- FL Studio VST3 compatibility investigation
+
+-   Changelog generation from commits
+-   Version bump modal with release notes
+-   DAW setup guides
+-   Keyboard shortcuts (expand)
+-   FL Studio VST3 compatibility investigation
 
 ---
 
@@ -373,15 +396,16 @@ npm run lint
 
 ### Documentation References
 
-| Framework | Guide | Platform |
-|-----------|-------|----------|
+| Framework                 | Guide                             | Platform      |
+| ------------------------- | --------------------------------- | ------------- |
 | **WebView (Advanced UI)** | `.docs/nih-plug-webview-guide.md` | All platforms |
-| **egui (Standard UI)** | `.docs/nih-plug-egui-guide.md` | All platforms |
-| **Native** | No UI, DAW controls only | All platforms |
+| **egui (Standard UI)**    | `.docs/nih-plug-egui-guide.md`    | All platforms |
+| **Native**                | No UI, DAW controls only          | All platforms |
 
 ### Safety Requirement (ALL plugins)
 
 **ALWAYS include a safety limiter:**
+
 ```rust
 #[inline]
 fn safety_limit(sample: f32) -> f32 {
@@ -437,17 +461,20 @@ WebViewEditor::new(HTMLSource::String(include_str!("ui.html")), (400, 300))
 ```
 
 **JavaScript IPC:**
+
 ```javascript
 // Send to plugin
-window.ipc.postMessage(JSON.stringify({ type: 'SetGain', value: 0.5 }));
+window.ipc.postMessage(JSON.stringify({ type: 'SetGain', value: 0.5 }))
 
 // Receive from plugin
-window.onPluginMessage = function(msg) { /* handle msg.type */ };
+window.onPluginMessage = function (msg) {
+    /* handle msg.type */
+}
 
 // Init on load
 window.addEventListener('DOMContentLoaded', () => {
-    window.ipc.postMessage(JSON.stringify({ type: 'Init' }));
-});
+    window.ipc.postMessage(JSON.stringify({ type: 'Init' }))
+})
 ```
 
 ### egui Plugin Pattern (Cross-platform)
@@ -478,16 +505,18 @@ create_egui_editor(
 ### Template Location
 
 Plugin templates are generated in `src-tauri/src/commands/projects.rs`:
-- `generate_effect_webview_template()` / `generate_instrument_webview_template()`
-- `generate_effect_egui_template()` / `generate_instrument_egui_template()`
-- `generate_effect_native_template()` / `generate_instrument_native_template()`
-- `generate_webview_ui_html()`
+
+-   `generate_effect_webview_template()` / `generate_instrument_webview_template()`
+-   `generate_effect_egui_template()` / `generate_instrument_egui_template()`
+-   `generate_effect_native_template()` / `generate_instrument_native_template()`
+-   `generate_webview_ui_html()`
 
 ### WebView Plugin Compatibility
 
 WebView plugins use a forked `nih-plug-webview` ([github.com/jamesontucker/nih-plug-webview](https://github.com/jamesontucker/nih-plug-webview)) that includes:
-- Prefixed Objective-C class names to avoid conflicts with Tauri's wry
-- Dynamic class suffix via `WRY_BUILD_SUFFIX` env var for hot reload support
+
+-   Prefixed Objective-C class names to avoid conflicts with Tauri's wry
+-   Dynamic class suffix via `WRY_BUILD_SUFFIX` env var for hot reload support
 
 ---
 
@@ -503,48 +532,54 @@ The audio preview system uses a global singleton engine (`src-tauri/src/audio/en
 6. **Output**: cpal device with configurable sample rate and buffer size
 
 **Key Files:**
-- `audio/engine.rs` - Main audio thread, buffer management, metering
-- `audio/plugin/clap_host.rs` - CLAP plugin loading, parameter control, MIDI routing
-- `audio/plugin/editor.rs` - Plugin editor window (Objective-C on macOS)
-- `audio/signals.rs` - Test signal generators
-- `audio/samples.rs` - Sample file loading (symphonia)
-- `audio/input.rs` - Live audio input capture
-- `audio/spectrum.rs` - Real-time FFT analysis
-- `audio/midi/events.rs` - MIDI event types and lock-free queue
-- `audio/midi/device.rs` - Hardware MIDI device input (midir)
-- `audio/midi/patterns.rs` - MIDI pattern/sequencer playback
-- `audio/midi/player.rs` - MIDI file player with tempo control
-- `audio/midi/file.rs` - MIDI file parsing (midly)
+
+-   `audio/engine.rs` - Main audio thread, buffer management, metering
+-   `audio/plugin/clap_host.rs` - CLAP plugin loading, parameter control, MIDI routing
+-   `audio/plugin/editor.rs` - Plugin editor window (Objective-C on macOS)
+-   `audio/signals.rs` - Test signal generators
+-   `audio/samples.rs` - Sample file loading (symphonia)
+-   `audio/input.rs` - Live audio input capture
+-   `audio/spectrum.rs` - Real-time FFT analysis
+-   `audio/midi/events.rs` - MIDI event types and lock-free queue
+-   `audio/midi/device.rs` - Hardware MIDI device input (midir)
+-   `audio/midi/patterns.rs` - MIDI pattern/sequencer playback
+-   `audio/midi/player.rs` - MIDI file player with tempo control
+-   `audio/midi/file.rs` - MIDI file parsing (midly)
 
 ---
 
 ## Dependencies (Cargo.toml)
 
 **Core:**
-- `tauri 2.9.5` - Desktop framework
-- `tokio` - Async runtime
-- `serde/serde_json` - Serialization
+
+-   `tauri 2.9.5` - Desktop framework
+-   `tokio` - Async runtime
+-   `serde/serde_json` - Serialization
 
 **Audio:**
-- `cpal 0.15` - Audio device access
-- `ringbuf` - Lock-free ring buffer
-- `symphonia` - Audio format decoding (WAV, MP3, AAC)
-- `libloading` - Dynamic library loading (CLAP plugins)
-- `notify` - File watching for hot reload
-- `rustfft` - Real-time FFT for spectrum analysis
+
+-   `cpal 0.15` - Audio device access
+-   `ringbuf` - Lock-free ring buffer
+-   `symphonia` - Audio format decoding (WAV, MP3, AAC)
+-   `libloading` - Dynamic library loading (CLAP plugins)
+-   `notify` - File watching for hot reload
+-   `rustfft` - Real-time FFT for spectrum analysis
 
 **MIDI:**
-- `midir` - Cross-platform MIDI device access
-- `midly` - MIDI file parsing
+
+-   `midir` - Cross-platform MIDI device access
+-   `midly` - MIDI file parsing
 
 **Plugins:**
-- `tauri-plugin-shell` - Shell command execution
-- `tauri-plugin-dialog` - File dialogs
-- `tauri-plugin-log` - Logging
-- `tauri-plugin-updater` - Auto-update from GitHub Releases
+
+-   `tauri-plugin-shell` - Shell command execution
+-   `tauri-plugin-dialog` - File dialogs
+-   `tauri-plugin-log` - Logging
+-   `tauri-plugin-updater` - Auto-update from GitHub Releases
 
 **macOS:**
-- `objc2`, `objc2-foundation`, `objc2-app-kit` - Native plugin editor windows
+
+-   `objc2`, `objc2-foundation`, `objc2-app-kit` - Native plugin editor windows
 
 ---
 
