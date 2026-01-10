@@ -195,23 +195,41 @@ export function PluginViewerToggle() {
       return 'Native/headless plugins have no UI to preview';
     }
     if (showWebviewWarning) {
-      return 'Plugin Viewer - WebView plugins require rebuild after disabling';
+      return 'WebView plugins require rebuild after disabling';
     }
     if (needsBuild) {
-      return 'Plugin Viewer - Rebuild required';
+      return 'Rebuild required to launch plugin';
     }
     if (needsFreshBuild && !isActive) {
-      return 'Plugin Viewer - Build required before enabling';
+      return 'Build required before launching';
     }
-    return isActive ? 'Disable plugin viewer' : 'Enable plugin viewer';
+    return isActive ? 'Disable plugin' : 'Launch plugin preview';
   };
 
   return (
     <div className="flex items-center gap-2">
-      {/* Compact status indicator */}
-      <span className={`text-xs font-medium ${status.color}`}>
-        {status.text}
-      </span>
+      {/* Webview warning + status indicator */}
+      <div className="flex items-center gap-2">
+        {showWebviewWarning && (
+          <>
+            <span className="text-xs text-amber-400 flex items-center gap-1">
+              Rebuild required if disabled
+              <span className="relative group">
+                <span className="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full bg-amber-500/20 text-amber-400 text-[10px] font-medium cursor-help">
+                  ?
+                </span>
+                <span className="absolute top-full left-1/2 -translate-x-1/2 mt-1.5 px-2 py-1 text-xs text-text-primary bg-bg-elevated border border-border rounded-md shadow-lg whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-150 pointer-events-none z-50">
+                  WebView plugins require a new build after disabling
+                </span>
+              </span>
+            </span>
+            <div className="w-px h-3 bg-border" />
+          </>
+        )}
+        <span className={`text-xs font-medium ${status.color}`}>
+          {status.text}
+        </span>
+      </div>
 
       {/* Toggle button - styled to match Controls button */}
       <button
@@ -221,7 +239,7 @@ export function PluginViewerToggle() {
           isActive
             ? 'bg-accent text-white'
             : pluginAvailable && !isDisabled
-              ? 'bg-amber-500/10 text-text-primary hover:bg-amber-500/20 hover:text-amber-400 border border-amber-500/30 hover:border-amber-500/50'
+              ? 'bg-amber-500/15 text-amber-400 border border-amber-500/50 hover:bg-amber-500/25 hover:border-amber-400 shadow-[0_0_12px_rgba(245,158,11,0.4)] animate-pulse'
               : 'bg-bg-tertiary text-text-primary hover:bg-accent/20 hover:text-accent border border-border hover:border-accent/30'
         } ${isDisabled ? 'opacity-50 cursor-not-allowed' : ''}`}
         title={getTooltip()}
@@ -230,7 +248,7 @@ export function PluginViewerToggle() {
         <div className={`w-2 h-2 rounded-full flex-shrink-0 ${
           isActive ? 'bg-white' : getDotColor()
         }`} />
-        {isActive ? 'Disable Plugin' : 'View Plugin'}
+        {isActive ? 'Disable Plugin' : 'Launch Plugin'}
       </button>
 
       {/* Reopen button (when active and has editor, but editor is closed) */}
