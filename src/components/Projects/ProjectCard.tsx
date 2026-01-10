@@ -68,26 +68,28 @@ export function ProjectCard({ project, isActive, isBusy, busyType, collapsed = f
     }
   };
 
-  // Get icon color based on template type (green when active)
+  // Get icon color based on template type (green when active, muted when inactive)
   const getIconColor = () => {
     if (isActive) {
       return 'text-accent';
     }
+    // More subtle colors for inactive items
     if (project.template === 'instrument') {
-      return 'text-amber-500/70';
+      return 'text-amber-600/40';
     }
-    return 'text-sky-500/70';
+    return 'text-sky-600/40';
   };
 
-  // Get icon background based on template type (green when active)
+  // Get icon background based on template type (green when active, subtle when inactive)
   const getIconBg = () => {
     if (isActive) {
       return 'bg-accent/20';
     }
+    // Very subtle backgrounds for inactive items
     if (project.template === 'instrument') {
-      return 'bg-amber-500/10';
+      return 'bg-amber-500/5';
     }
-    return 'bg-sky-500/10';
+    return 'bg-sky-500/5';
   };
 
   // Render icon based on template type
