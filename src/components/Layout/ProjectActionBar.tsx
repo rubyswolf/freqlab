@@ -304,7 +304,7 @@ export function ProjectActionBar({
                 ? 'bg-accent hover:bg-accent-hover text-white border-accent'
                 : 'bg-bg-tertiary text-text-primary hover:bg-accent/20 hover:text-accent border-border hover:border-accent/30'
         }`}
-        title={buildDisabled ? (anyBuildInProgress ? 'Build in progress...' : 'Working on this project...') : hasNewVersionFromClaude ? `Build v${pendingBuildVersion?.version} from Claude` : 'Build plugin'}
+        title={buildDisabled ? (anyBuildInProgress ? 'Build in progress...' : 'Working on this project...') : hasNewVersionFromClaude ? `Build v${pendingBuildVersion?.version}` : 'Build plugin'}
       >
         {isBuilding ? (
           <>
