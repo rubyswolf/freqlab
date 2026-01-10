@@ -108,7 +108,7 @@ src-tauri/                    # Rust backend
 
 1. **Prerequisites Check** - Verifies Xcode CLI, Rust, Claude CLI, Claude auth
 2. **Project Management** - Create/list/delete plugins with templates
-3. **Plugin Templates** - Effect/Instrument × WebView/egui/Headless
+3. **Plugin Templates** - Effect/Instrument × WebView/egui/Native
 4. **Claude Integration** - Chat interface with streaming output
 5. **Build System** - `cargo xtask bundle` with real-time output streaming
 6. **Version Control** - Git init, auto-commit after Claude edits, revert to commit
@@ -192,7 +192,7 @@ interface ProjectMeta {
   name: string;
   description: string;
   template?: 'effect' | 'instrument';
-  uiFramework?: 'webview' | 'egui' | 'headless';
+  uiFramework?: 'webview' | 'egui' | 'native';
   components?: string[];  // Starter components
   created_at: string;
   updated_at: string;
@@ -299,7 +299,7 @@ interface AudioSettings {
 - Welcome wizard flow
 
 ### Phase 2: Project Management + Claude Integration ✅
-- Project creation with nih-plug templates (effect/instrument × webview/egui/headless)
+- Project creation with nih-plug templates (effect/instrument × webview/egui/native)
 - Project list in sidebar
 - Claude Code CLI integration with streaming
 - Chat interface with markdown support
@@ -377,7 +377,7 @@ npm run lint
 |-----------|-------|----------|
 | **WebView (Advanced UI)** | `.docs/nih-plug-webview-guide.md` | All platforms |
 | **egui (Standard UI)** | `.docs/nih-plug-egui-guide.md` | All platforms |
-| **Headless** | No UI, DAW controls only | All platforms |
+| **Native** | No UI, DAW controls only | All platforms |
 
 ### Safety Requirement (ALL plugins)
 
@@ -480,7 +480,7 @@ create_egui_editor(
 Plugin templates are generated in `src-tauri/src/commands/projects.rs`:
 - `generate_effect_webview_template()` / `generate_instrument_webview_template()`
 - `generate_effect_egui_template()` / `generate_instrument_egui_template()`
-- `generate_effect_headless_template()` / `generate_instrument_headless_template()`
+- `generate_effect_native_template()` / `generate_instrument_native_template()`
 - `generate_webview_ui_html()`
 
 ### WebView Plugin Compatibility

@@ -647,7 +647,7 @@ export function ChatPanel({ project, onVersionChange }: ChatPanelProps) {
           <>
             <span className="text-[10px] text-text-muted">UI Type:</span>
             <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-bg-tertiary text-text-secondary font-medium">
-              {project.uiFramework === 'webview' ? 'WebView' : project.uiFramework === 'egui' ? 'egui' : 'headless'}
+              {project.uiFramework === 'webview' ? 'WebView' : project.uiFramework === 'egui' ? 'egui' : 'Native'}
             </span>
           </>
         )}

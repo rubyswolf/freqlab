@@ -22,6 +22,7 @@ interface ComponentOption {
 interface UIFrameworkOption {
   id: UIFramework;
   name: string;
+  tag: string;
   description: string;
   cpuUsage: 'minimal' | 'light' | 'moderate';
   designControl: 'full' | 'standard' | 'daw-only';
@@ -32,7 +33,8 @@ interface UIFrameworkOption {
 const UI_FRAMEWORK_OPTIONS: UIFrameworkOption[] = [
   {
     id: 'webview',
-    name: 'Advanced UI (WebView)',
+    name: 'Advanced UI',
+    tag: 'WebView',
     description: 'Best for plugins where appearance and user experience are top priorities.',
     cpuUsage: 'moderate',
     designControl: 'full',
@@ -41,7 +43,8 @@ const UI_FRAMEWORK_OPTIONS: UIFrameworkOption[] = [
   },
   {
     id: 'egui',
-    name: 'Simple UI (egui)',
+    name: 'Simple UI',
+    tag: 'egui',
     description: 'Good middle ground between visual polish and CPU efficiency.',
     cpuUsage: 'light',
     designControl: 'standard',
@@ -49,8 +52,9 @@ const UI_FRAMEWORK_OPTIONS: UIFrameworkOption[] = [
     previewNote: 'Real-time preview in freqlab',
   },
   {
-    id: 'headless',
+    id: 'native',
     name: 'No Custom UI',
+    tag: 'Native',
     description: 'Focus entirely on your audio algorithm. Your DAW provides basic controls.',
     cpuUsage: 'minimal',
     designControl: 'daw-only',
@@ -86,7 +90,7 @@ function EguiIcon({ className }: { className?: string }) {
   );
 }
 
-function HeadlessIcon({ className }: { className?: string }) {
+function NativeIcon({ className }: { className?: string }) {
   return (
     <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}>
       <path d="M12 3v18" />
@@ -102,7 +106,7 @@ function getFrameworkIcon(id: UIFramework, className?: string) {
   switch (id) {
     case 'webview': return <WebViewIcon className={className} />;
     case 'egui': return <EguiIcon className={className} />;
-    case 'headless': return <HeadlessIcon className={className} />;
+    case 'native': return <NativeIcon className={className} />;
   }
 }
 
@@ -454,7 +458,7 @@ export function NewProjectModal({ isOpen, onClose, onSubmit }: NewProjectModalPr
                     <div className={`text-sm font-semibold mb-1 pr-6 ${
                       uiFramework === option.id ? 'text-accent' : 'text-text-primary'
                     }`}>
-                      {option.name}
+                      {option.name} <span className="text-[10px] font-normal text-text-muted">({option.tag})</span>
                     </div>
 
                     {/* Description */}
