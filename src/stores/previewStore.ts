@@ -98,6 +98,13 @@ interface PreviewState {
   // Demo samples list
   demoSamples: DemoSample[];
 
+  // Plugin viewer state (shared between Header toggle and PreviewPanel)
+  pluginAvailable: boolean;
+  currentPluginVersion: number;
+  webviewNeedsFreshBuild: boolean;
+  pluginLoading: boolean;
+  engineInitialized: boolean;
+
   // Actions
   setOpen: (open: boolean) => void;
   toggleOpen: () => void;
@@ -119,6 +126,11 @@ interface PreviewState {
   setParameters: (params: PluginParameter[]) => void;
   updateParameter: (id: string, value: number) => void;
   setDemoSamples: (samples: DemoSample[]) => void;
+  setPluginAvailable: (available: boolean) => void;
+  setCurrentPluginVersion: (version: number) => void;
+  setWebviewNeedsFreshBuild: (needs: boolean) => void;
+  setPluginLoading: (loading: boolean) => void;
+  setEngineInitialized: (initialized: boolean) => void;
   reset: () => void;
 }
 
@@ -165,6 +177,11 @@ const initialState = {
   metering: defaultMetering,
   parameters: [] as PluginParameter[],
   demoSamples: [] as DemoSample[],
+  pluginAvailable: false,
+  currentPluginVersion: 1,
+  webviewNeedsFreshBuild: false,
+  pluginLoading: false,
+  engineInitialized: false,
 };
 
 export const usePreviewStore = create<PreviewState>()((set) => ({
@@ -208,6 +225,12 @@ export const usePreviewStore = create<PreviewState>()((set) => ({
     })),
 
   setDemoSamples: (samples) => set({ demoSamples: samples }),
+
+  setPluginAvailable: (available) => set({ pluginAvailable: available }),
+  setCurrentPluginVersion: (version) => set({ currentPluginVersion: version }),
+  setWebviewNeedsFreshBuild: (needs) => set({ webviewNeedsFreshBuild: needs }),
+  setPluginLoading: (loading) => set({ pluginLoading: loading }),
+  setEngineInitialized: (initialized) => set({ engineInitialized: initialized }),
 
   reset: () => set(initialState),
 }));
