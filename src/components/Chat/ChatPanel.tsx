@@ -129,7 +129,7 @@ export function ChatPanel({ project, onVersionChange }: ChatPanelProps) {
   // Interrupt handler
   const handleInterrupt = useCallback(async () => {
     clearTimeoutTimer();
-    addLine('[Interrupting Claude...]');
+    addLine('[Interrupting...]');
     try {
       await invoke('interrupt_claude', { projectPath: project.path });
     } catch (err) {
@@ -520,7 +520,7 @@ export function ChatPanel({ project, onVersionChange }: ChatPanelProps) {
           const interruptMessage: ChatMessageType = {
             id: crypto.randomUUID(),
             role: 'assistant',
-            content: 'Claude was interrupted.',
+            content: 'Chat was interrupted.',
             timestamp: new Date().toISOString(),
             reverted: false,
           };
