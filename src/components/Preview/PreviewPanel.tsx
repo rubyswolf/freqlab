@@ -593,6 +593,15 @@ export function PreviewPanel() {
               <path strokeLinecap="round" strokeLinejoin="round" d="M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.348a1.125 1.125 0 010 1.971l-11.54 6.347a1.125 1.125 0 01-1.667-.985V5.653z" />
             </svg>
             <h2 className="text-sm font-semibold text-text-primary">Plugin Controls</h2>
+            {activeProject && (
+              <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${
+                effectivePluginType === 'instrument'
+                  ? 'bg-amber-500/15 text-amber-400'
+                  : 'bg-blue-500/15 text-blue-400'
+              }`}>
+                {effectivePluginType === 'instrument' ? 'Instrument' : 'Effect'}
+              </span>
+            )}
           </div>
           <button
             onClick={() => setOpen(false)}
@@ -620,18 +629,6 @@ export function PreviewPanel() {
 
           {activeProject && (
             <>
-              {/* Plugin Type Badge */}
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-text-muted">Type:</span>
-                <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${
-                  effectivePluginType === 'instrument'
-                    ? 'bg-amber-500/15 text-amber-400'
-                    : 'bg-blue-500/15 text-blue-400'
-                }`}>
-                  {effectivePluginType === 'instrument' ? 'Instrument' : 'Effect'}
-                </span>
-              </div>
-
               {/* Input Source Section */}
               <div className="border-b border-border pb-2">
                 {renderSectionHeader('input', 'Input Source',

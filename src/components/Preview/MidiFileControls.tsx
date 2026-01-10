@@ -400,34 +400,47 @@ export function MidiFileControls({ pluginLoaded }: MidiFileControlsProps) {
             </div>
           </div>
 
-          {/* Tempo & Play Control */}
+          {/* Tempo Control */}
           <div className="space-y-2">
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2 flex-1">
-                <span className="text-xs text-text-muted">Tempo</span>
-                {useTempoAutomation ? (
-                  <span className="text-xs text-text-muted italic">Following file</span>
-                ) : (
-                  <>
-                    <span className="text-xs font-medium text-accent tabular-nums">{bpm} BPM</span>
-                    {bpm !== originalBpm && (
-                      <button
-                        onClick={handleResetBpm}
-                        className="text-xs text-text-muted hover:text-text-primary transition-colors"
-                        title={`Reset to original (${originalBpm} BPM)`}
-                      >
-                        <span className="flex items-center gap-1">
-                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                          </svg>
-                          {originalBpm}
-                        </span>
-                      </button>
-                    )}
-                  </>
-                )}
-              </div>
-              {/* Play/Stop Button */}
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-text-muted">Tempo</span>
+              {useTempoAutomation ? (
+                <span className="text-xs text-text-muted italic">Following file</span>
+              ) : (
+                <>
+                  <span className="text-xs font-medium text-accent tabular-nums">{bpm} BPM</span>
+                  {bpm !== originalBpm && (
+                    <button
+                      onClick={handleResetBpm}
+                      className="text-xs text-text-muted hover:text-text-primary transition-colors"
+                      title={`Reset to original (${originalBpm} BPM)`}
+                    >
+                      <span className="flex items-center gap-1">
+                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                        </svg>
+                        {originalBpm}
+                      </span>
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
+            {!useTempoAutomation && (
+              <input
+                type="range"
+                min={Math.min(40, originalBpm)}
+                max={Math.max(200, originalBpm)}
+                value={bpm}
+                onChange={(e) => handleBpmChange(Number(e.target.value))}
+                className="w-full h-2 bg-bg-tertiary rounded-lg appearance-none cursor-pointer accent-accent"
+              />
+            )}
+          </div>
+
+          {/* Transport Controls */}
+          <div className="pt-2 border-t border-border">
+            <div className="flex items-center gap-2">
               <button
                 onClick={isPlaying ? handleStop : handlePlay}
                 disabled={!pluginLoaded}
@@ -451,17 +464,8 @@ export function MidiFileControls({ pluginLoaded }: MidiFileControlsProps) {
                   </svg>
                 )}
               </button>
+              <span className="flex-1 text-xs text-text-muted">MIDI Playback</span>
             </div>
-            {!useTempoAutomation && (
-              <input
-                type="range"
-                min={Math.min(40, originalBpm)}
-                max={Math.max(200, originalBpm)}
-                value={bpm}
-                onChange={(e) => handleBpmChange(Number(e.target.value))}
-                className="w-full h-2 bg-bg-tertiary rounded-lg appearance-none cursor-pointer accent-accent"
-              />
-            )}
           </div>
         </>
       )}

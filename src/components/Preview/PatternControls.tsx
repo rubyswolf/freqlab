@@ -232,14 +232,25 @@ export function PatternControls({ pluginLoaded }: PatternControlsProps) {
         </div>
       </div>
 
-      {/* Tempo & Play Control */}
+      {/* Tempo Control */}
       <div className="space-y-2">
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2 flex-1">
-            <span className="text-xs text-text-muted">Tempo</span>
-            <span className="text-xs font-medium text-accent tabular-nums">{bpm} BPM</span>
-          </div>
-          {/* Play/Stop Button */}
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-text-muted">Tempo</span>
+          <span className="text-xs font-medium text-accent tabular-nums">{bpm} BPM</span>
+        </div>
+        <input
+          type="range"
+          min={40}
+          max={200}
+          value={bpm}
+          onChange={(e) => handleBpmChange(Number(e.target.value))}
+          className="w-full h-2 bg-bg-tertiary rounded-lg appearance-none cursor-pointer accent-accent"
+        />
+      </div>
+
+      {/* Transport Controls */}
+      <div className="pt-2 border-t border-border">
+        <div className="flex items-center gap-2">
           <button
             onClick={isPlaying ? handleStop : handlePlay}
             disabled={!pluginLoaded || (!isPlaying && !selectedPattern)}
@@ -263,15 +274,8 @@ export function PatternControls({ pluginLoaded }: PatternControlsProps) {
               </svg>
             )}
           </button>
+          <span className="flex-1 text-xs text-text-muted">Pattern Playback</span>
         </div>
-        <input
-          type="range"
-          min={40}
-          max={200}
-          value={bpm}
-          onChange={(e) => handleBpmChange(Number(e.target.value))}
-          className="w-full h-2 bg-bg-tertiary rounded-lg appearance-none cursor-pointer accent-accent"
-        />
       </div>
 
       {!pluginLoaded && (

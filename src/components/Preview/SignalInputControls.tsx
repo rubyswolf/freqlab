@@ -144,7 +144,7 @@ export const SignalInputControls = memo(function SignalInputControls({
       {/* Gate/Pulse Pattern Controls */}
       <div className="space-y-3 pt-2 border-t border-border">
         <div className="flex items-center justify-between">
-          <span className="text-xs font-medium text-text-secondary">Gate Pattern</span>
+          <span className="text-xs text-text-muted">Gate Pattern</span>
         </div>
 
         {/* Gate Pattern Selector */}
