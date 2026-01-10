@@ -50,6 +50,8 @@ export function applyTheme(theme: 'dark' | 'light' | 'custom', customColors?: Cu
     root.style.setProperty('--theme-accent-subtle', hexToRgba(customColors.accent, 0.15));
     root.style.setProperty('--theme-border', isLight ? '#e5e5e5' : adjustColor(customColors.bgTertiary, 10));
     root.style.setProperty('--theme-border-subtle', isLight ? '#f0f0f0' : customColors.bgTertiary);
+    root.style.setProperty('--theme-chat-user', customColors.chatUser);
+    root.style.setProperty('--theme-chat-user-hover', adjustColor(customColors.chatUser, isLight ? -15 : -15));
   } else {
     // Clear custom properties for non-custom themes
     const props = [
@@ -57,6 +59,7 @@ export function applyTheme(theme: 'dark' | 'light' | 'custom', customColors?: Cu
       '--theme-text-primary', '--theme-text-secondary', '--theme-text-muted',
       '--theme-accent', '--theme-accent-hover', '--theme-accent-subtle',
       '--theme-border', '--theme-border-subtle',
+      '--theme-chat-user', '--theme-chat-user-hover',
     ];
     props.forEach((prop) => root.style.removeProperty(prop));
   }
@@ -259,6 +262,11 @@ export function ThemePicker() {
               label="Text Secondary"
               value={customColors.textSecondary}
               onChange={(val) => updateCustomColor('textSecondary', val)}
+            />
+            <ColorInput
+              label="Chat Bubbles"
+              value={customColors.chatUser}
+              onChange={(val) => updateCustomColor('chatUser', val)}
             />
           </div>
 

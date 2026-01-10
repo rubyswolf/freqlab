@@ -221,7 +221,7 @@ export function ChatInput({ onSend, onInterrupt, disabled = false, showInterrupt
             className="flex-1 bg-transparent text-text-primary placeholder-text-muted focus:outline-none resize-none disabled:opacity-50 disabled:cursor-not-allowed leading-normal text-sm py-1"
           />
           {/* Keyboard hint inside input */}
-          <span className="text-[10px] text-text-muted/50 hidden sm:block whitespace-nowrap">
+          <span className="text-[10px] text-text-muted hidden sm:block whitespace-nowrap">
             Enter to send
           </span>
         </div>

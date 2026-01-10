@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { usePreviewStore } from '../../stores/previewStore';
 import { useProjectStore } from '../../stores/projectStore';
+import { useProjectBusyStore } from '../../stores/projectBusyStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 import * as previewApi from '../../api/preview';
 
@@ -19,6 +20,7 @@ export function PluginViewerToggle() {
   const engineInitialized = usePreviewStore((s) => s.engineInitialized);
   const editorOpen = usePreviewStore((s) => s.editorOpen);
   const activeProject = useProjectStore((s) => s.activeProject);
+  const buildInProgress = useProjectBusyStore((s) => s.buildingPath !== null);
   const audioSettings = useSettingsStore((s) => s.audioSettings);
 
   // === STABLE ACTION REFERENCES ===
@@ -143,7 +145,8 @@ export function PluginViewerToggle() {
   // Engine initializes on-demand when toggle is clicked, so don't require it for enabling
   // Always allow disabling if plugin is active - only disable when trying to enable but can't
   // Headless plugins have no UI, so always disabled
-  const isDisabled = isHeadless || isLoading ||
+  // Disable during builds to prevent version conflicts
+  const isDisabled = isHeadless || isLoading || buildInProgress ||
     (!isActive && needsFreshBuild && loadedPlugin.status === 'unloaded') ||
     (!isActive && needsBuild);
 
@@ -167,6 +170,10 @@ export function PluginViewerToggle() {
     }
     // Check active BEFORE needsBuild - if plugin is active, it's working
     if (isActive) {
+      // Show building indicator if active but build in progress
+      if (buildInProgress) {
+        return { text: 'Active (building...)', color: 'text-accent' };
+      }
       return { text: 'Active', color: 'text-accent' };
     }
     if (needsBuild) {
@@ -174,6 +181,10 @@ export function PluginViewerToggle() {
     }
     if (needsFreshBuild) {
       return { text: 'Build required', color: 'text-amber-400' };
+    }
+    // Available but not active - show if build in progress
+    if (buildInProgress) {
+      return { text: 'Building...', color: 'text-amber-400' };
     }
     // Available but not active
     return { text: 'Available', color: 'text-amber-400' };
@@ -196,6 +207,9 @@ export function PluginViewerToggle() {
   const getTooltip = () => {
     if (isHeadless) {
       return 'Native/headless plugins have no UI to preview';
+    }
+    if (buildInProgress) {
+      return 'Wait for build to complete';
     }
     if (showWebviewWarning) {
       return 'WebView plugins require rebuild after disabling';
