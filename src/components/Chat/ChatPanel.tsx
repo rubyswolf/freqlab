@@ -487,7 +487,8 @@ export function ChatPanel({ project, onVersionChange }: ChatPanelProps) {
       resetTimeout();
 
       if (data.type === 'text' && data.content) {
-        streamingContentRef.current += data.content + '\n';
+        // Use \n\n so each message becomes a separate bubble in conversational mode
+        streamingContentRef.current += data.content + '\n\n';
         setStreamingContent(streamingContentRef.current);
         addLine(data.content);
       } else if (data.type === 'error' && data.message) {
@@ -525,10 +526,11 @@ export function ChatPanel({ project, onVersionChange }: ChatPanelProps) {
         : undefined;
 
       // Add assistant message with commit hash for version control
+      // Prefer streaming content (has all messages) over response.content (may only be final message)
       const assistantMessage: ChatMessageType = {
         id: crypto.randomUUID(),
         role: 'assistant',
-        content: response.content.trim() || streamingContentRef.current.trim(),
+        content: streamingContentRef.current.trim() || response.content.trim(),
         timestamp: new Date().toISOString(),
         commitHash: response.commit_hash,
         version: nextVersion,
@@ -762,32 +764,59 @@ export function ChatPanel({ project, onVersionChange }: ChatPanelProps) {
                 !isBusy &&
                 message.version !== effectiveActiveVersion;
 
-              // In conversational mode, render assistant messages as multiple bubbles
-              // Split by double newlines to keep paragraphs/lists together
-              if (chatStyle === 'conversational' && message.role === 'assistant') {
+              // In conversational mode, render as phone-style chat bubbles
+              if (chatStyle === 'conversational') {
+                // User messages: green bubble on the right
+                if (message.role === 'user') {
+                  return (
+                    <div key={message.id} className={`flex justify-end animate-chat-bubble ${isInactiveVersion ? 'opacity-50' : ''}`}>
+                      <div className="max-w-[85%] rounded-2xl rounded-br-md px-4 py-2.5 bg-accent text-white">
+                        <div className="text-sm whitespace-pre-wrap break-words">{message.content}</div>
+                        <div className="text-[10px] text-white/60 text-right mt-1">
+                          {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                }
+
+                // Assistant messages: split by \n\n into separate grey bubbles on the left
                 const blocks = message.content.split(/\n\n+/).filter((block) => block.trim());
                 return (
                   <div key={message.id} className={`space-y-2 ${isInactiveVersion ? 'opacity-50' : ''}`}>
                     {blocks.map((block, index) => {
-                      // Remove trailing colon from block content
-                      const cleanBlock = block.trimEnd().endsWith(':') ? block.trimEnd().slice(0, -1) : block;
                       const isLastBlock = index === blocks.length - 1;
+                      const trimmedBlock = block.trimEnd();
+                      // Only strip trailing colon on the LAST block (nothing follows, so it's an artifact)
+                      // Keep colon on non-last blocks (introduces content that follows)
+                      // Also don't strip if the block itself is a list or code (the colon is part of content)
+                      const startsWithListMarker = /^[\d\-\*\•]/.test(trimmedBlock);
+                      const isCodeBlock = trimmedBlock.startsWith('```');
+                      const shouldStripColon = isLastBlock &&
+                        trimmedBlock.endsWith(':') &&
+                        !startsWithListMarker &&
+                        !isCodeBlock;
+                      const displayBlock = shouldStripColon
+                        ? trimmedBlock.slice(0, -1)
+                        : block;
                       return (
-                        <div key={index} className="flex justify-start">
+                        <div key={index} className="flex justify-start animate-chat-bubble">
                           <div className={`max-w-[85%] rounded-2xl rounded-bl-md px-4 py-2.5 bg-bg-tertiary ${isCurrentVersion && isLastBlock ? 'ring-2 ring-accent/50' : ''}`}>
                             <div className="text-sm text-text-primary break-words prose prose-sm prose-invert max-w-none prose-p:my-0 prose-ul:my-0 prose-ol:my-0 prose-li:my-0 prose-code:bg-black/20 prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-code:text-sm prose-strong:text-text-primary">
-                              <ReactMarkdown components={markdownComponents}>{cleanBlock}</ReactMarkdown>
+                              <ReactMarkdown components={markdownComponents}>{displayBlock}</ReactMarkdown>
                             </div>
-                            {/* Show version badge on last bubble only */}
-                            {isLastBlock && message.version && (
+                            {/* Show timestamp on last bubble, version badge only if versioned */}
+                            {isLastBlock && (
                               <div className="flex items-center justify-between mt-1 text-text-muted">
                                 <div className="flex items-center gap-2">
                                   <span className="text-xs">
                                     {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                   </span>
-                                  <span className={`text-xs px-1.5 py-0.5 rounded ${isCurrentVersion ? 'bg-violet-500 text-white' : 'bg-violet-500/20 text-violet-400'}`}>
-                                    v{message.version}{isCurrentVersion ? ' (current)' : ''}
-                                  </span>
+                                  {message.version && (
+                                    <span className={`text-xs px-1.5 py-0.5 rounded ${isCurrentVersion ? 'bg-violet-500 text-white' : 'bg-violet-500/20 text-violet-400'}`}>
+                                      v{message.version}{isCurrentVersion ? ' (current)' : ''}
+                                    </span>
+                                  )}
                                 </div>
                                 {canSwitchToVersion && (
                                   <button
@@ -842,21 +871,17 @@ export function ChatPanel({ project, onVersionChange }: ChatPanelProps) {
                   {streamingContent
                     .split(/\n\n+/)
                     .filter((block) => block.trim())
-                    .map((block, index) => {
-                      // Remove trailing colon from block
-                      const cleanBlock = block.trimEnd().endsWith(':') ? block.trimEnd().slice(0, -1) : block;
-                      return (
-                        <div key={index} className="flex justify-start">
-                          <div className="max-w-[85%] rounded-2xl rounded-bl-md px-4 py-2.5 bg-bg-tertiary">
-                            <div className="text-sm text-text-primary break-words prose prose-sm prose-invert max-w-none prose-p:my-0 prose-ul:my-0 prose-ol:my-0 prose-li:my-0 prose-code:bg-black/20 prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-code:text-sm prose-strong:text-text-primary">
-                              <ReactMarkdown components={markdownComponents}>{cleanBlock}</ReactMarkdown>
-                            </div>
+                    .map((block, index) => (
+                      <div key={index} className="flex justify-start animate-chat-bubble">
+                        <div className="max-w-[85%] rounded-2xl rounded-bl-md px-4 py-2.5 bg-bg-tertiary">
+                          <div className="text-sm text-text-primary break-words prose prose-sm prose-invert max-w-none prose-p:my-0 prose-ul:my-0 prose-ol:my-0 prose-li:my-0 prose-code:bg-black/20 prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-code:text-sm prose-strong:text-text-primary">
+                            <ReactMarkdown components={markdownComponents}>{block}</ReactMarkdown>
                           </div>
                         </div>
-                      );
-                    })}
+                      </div>
+                    ))}
                   {/* Typing indicator */}
-                  <div className="flex justify-start">
+                  <div className="flex justify-start animate-chat-bubble">
                     <div className="rounded-2xl rounded-bl-md px-4 py-2.5 bg-bg-tertiary">
                       <div className="flex items-center gap-1">
                         <div className="w-1.5 h-1.5 rounded-full bg-text-muted animate-[pulse_1s_ease-in-out_infinite]" style={{ animationDelay: '0ms' }} />

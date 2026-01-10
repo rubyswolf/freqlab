@@ -145,15 +145,17 @@ export function ChatInput({ onSend, onInterrupt, disabled = false, showInterrupt
     }
   };
 
+  const canSend = (value.trim() || attachments.length > 0) && !disabled;
+
   return (
-    <div className="border-t border-border bg-bg-secondary p-4">
+    <div className="border-t border-border bg-bg-secondary p-3">
       {/* Attachment previews */}
       {attachments.length > 0 && (
         <div className="mb-3 flex flex-wrap gap-2">
           {attachments.map((attachment) => (
             <div
               key={attachment.id}
-              className="relative group flex items-center gap-2 px-3 py-2 bg-bg-tertiary border border-border rounded-lg"
+              className="relative group flex items-center gap-2 px-3 py-2 bg-bg-tertiary border border-border rounded-lg hover:border-accent/30 transition-colors"
             >
               {attachment.previewUrl && !previewErrors.has(attachment.id) ? (
                 <img
@@ -194,7 +196,11 @@ export function ChatInput({ onSend, onInterrupt, disabled = false, showInterrupt
         <button
           onClick={handleFileSelect}
           disabled={disabled}
-          className="h-11 w-11 bg-bg-tertiary hover:bg-bg-elevated disabled:opacity-50 text-text-muted hover:text-text-primary border border-border rounded-xl transition-all duration-200 disabled:cursor-not-allowed flex-shrink-0 flex items-center justify-center"
+          className={`p-2.5 rounded-lg border transition-all duration-200 flex-shrink-0 flex items-center justify-center ${
+            disabled
+              ? 'bg-bg-tertiary text-text-muted border-border opacity-50 cursor-not-allowed'
+              : 'bg-bg-tertiary text-text-muted hover:bg-accent/20 hover:text-accent border-border hover:border-accent/30'
+          }`}
           title="Attach files"
         >
           <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
@@ -202,7 +208,8 @@ export function ChatInput({ onSend, onInterrupt, disabled = false, showInterrupt
           </svg>
         </button>
 
-        <div className="flex-1 relative">
+        {/* Input container */}
+        <div className="flex-1 flex items-center gap-2 px-3 py-1.5 bg-bg-primary border border-border rounded-lg focus-within:border-accent/50 focus-within:ring-1 focus-within:ring-accent/20 transition-all">
           <textarea
             ref={textareaRef}
             value={value}
@@ -211,36 +218,39 @@ export function ChatInput({ onSend, onInterrupt, disabled = false, showInterrupt
             placeholder={placeholder}
             disabled={disabled}
             rows={1}
-            className="w-full px-4 py-2.5 bg-bg-primary border border-border rounded-xl text-text-primary placeholder-text-muted focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-colors resize-none disabled:opacity-50 disabled:cursor-not-allowed leading-normal"
+            className="flex-1 bg-transparent text-text-primary placeholder-text-muted focus:outline-none resize-none disabled:opacity-50 disabled:cursor-not-allowed leading-normal text-sm py-1"
           />
+          {/* Keyboard hint inside input */}
+          <span className="text-[10px] text-text-muted/50 hidden sm:block whitespace-nowrap">
+            Enter to send
+          </span>
         </div>
-        <button
-          onClick={handleSubmit}
-          disabled={disabled || (!value.trim() && attachments.length === 0)}
-          className="h-11 w-11 bg-accent hover:bg-accent-hover disabled:bg-bg-tertiary text-white disabled:text-text-muted rounded-xl transition-all duration-200 disabled:cursor-not-allowed hover:shadow-lg hover:shadow-accent/25 disabled:shadow-none flex-shrink-0 flex items-center justify-center"
-        >
-          {disabled ? (
-            <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-            </svg>
-          ) : (
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6" />
-            </svg>
-          )}
-        </button>
-      </div>
-      <div className="flex items-center justify-between mt-2 px-1">
-        <p className="text-xs text-text-muted">
-          Press Enter to send, Shift+Enter for new line
-        </p>
-        {showInterrupt && onInterrupt && (
+
+        {/* Send or Stop button */}
+        {showInterrupt && onInterrupt ? (
           <button
             onClick={onInterrupt}
-            className="text-xs text-error/70 hover:text-error transition-all duration-200 animate-fade-in"
+            className="p-2.5 rounded-lg border transition-all duration-200 flex-shrink-0 flex items-center justify-center bg-error/10 text-error border-error/30 hover:bg-error/20 hover:border-error/50"
+            title="Stop generating"
           >
-            Interrupt Claude
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 6h12v12H6z" />
+            </svg>
+          </button>
+        ) : (
+          <button
+            onClick={handleSubmit}
+            disabled={!canSend}
+            className={`p-2.5 rounded-lg border transition-all duration-200 flex-shrink-0 flex items-center justify-center ${
+              !canSend
+                ? 'bg-bg-tertiary text-text-muted border-border opacity-50 cursor-not-allowed'
+                : 'bg-accent hover:bg-accent-hover text-white border-accent hover:shadow-lg hover:shadow-accent/25'
+            }`}
+            title="Send message"
+          >
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" />
+            </svg>
           </button>
         )}
       </div>
