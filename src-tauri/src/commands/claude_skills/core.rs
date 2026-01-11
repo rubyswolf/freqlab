@@ -21,6 +21,56 @@ description: Critical DSP safety rules and anti-hallucination guardrails. Invoke
 
 > **WARNING:** `synfx-dsp` requires **nightly Rust**. Use `biquad` or `fundsp` for stable Rust builds.
 
+### fundsp Usage (CRITICAL)
+
+**fundsp 0.21+** uses the `AudioUnit` trait, NOT `AudioUnit32` or `AudioUnit64`:
+
+```rust
+use fundsp::prelude::*;
+
+// Create audio units
+let reverb = reverb_stereo(20.0, 2.0, 1.0);  // Returns impl AudioUnit
+
+// Process audio - use tick() for sample-by-sample
+fn process_sample(unit: &mut impl AudioUnit, left: f32, right: f32) -> (f32, f32) {
+    let output = unit.tick(&[left, right]);
+    (output[0], output[1])
+}
+
+// Reset state
+unit.reset();
+```
+
+**Common fundsp mistakes to AVOID:**
+- ❌ `AudioUnit32` - does not exist, use `AudioUnit`
+- ❌ `AudioUnit64` - does not exist, use `AudioUnit`
+- ❌ `dyn AudioUnit32` - use `dyn AudioUnit` or `impl AudioUnit`
+- ❌ `Box<dyn AudioUnit32>` - use `Box<dyn AudioUnit>`
+
+**IMPORTANT: fundsp uses f64 internally!**
+All fundsp functions expect `f64` arguments, not `f32`. Cast your parameters:
+```rust
+// Wrong - f32 parameters cause type errors
+let reverb = reverb_stereo(room_size, decay, 0.8);
+
+// Correct - cast to f64
+let reverb = reverb_stereo(room_size as f64, decay as f64, 0.8);
+```
+
+**Correct patterns:**
+```rust
+// Generic function
+fn apply_effect<T: AudioUnit>(effect: &mut T, input: &[f32]) -> Vec<f32> { ... }
+
+// Boxed dynamic dispatch
+let effect: Box<dyn AudioUnit> = Box::new(reverb_stereo(20.0, 2.0, 1.0));
+
+// Store in struct
+struct MyPlugin {
+    effect: Box<dyn AudioUnit>,
+}
+```
+
 **Correct approach - use a crate:**
 ```rust
 use biquad::{Biquad, Coefficients, DirectForm1, ToHertz, Type, Q_BUTTERWORTH_F32};
