@@ -10,7 +10,7 @@ static LEVEL_METER_RUNNING: AtomicBool = AtomicBool::new(false);
 
 use crate::audio::{
     device::{get_default_sample_rate, list_input_devices, list_output_devices, AudioConfig, AudioDeviceInfo},
-    engine::{get_engine_handle, get_engine_sample_rate, init_engine, reinit_engine, shutdown_engine, EngineState, InputSource},
+    engine::{get_engine_handle, get_engine_sample_rate, init_engine, reinit_engine, shutdown_engine, EngineState, InputSource, PluginPerformance},
     plugin::PluginState,
     signals::{GatePattern, SignalConfig, SignalType},
 };
@@ -76,6 +76,9 @@ pub struct MeteringData {
     pub stereo_positions_input: Vec<[f32; 2]>,
     /// INPUT stereo correlation coefficient (-1.0 to +1.0) - pre-FX
     pub stereo_correlation_input: f32,
+    /// Plugin performance metrics (only present when monitoring is enabled)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub plugin_performance: Option<PluginPerformance>,
 }
 
 /// Convert linear level to dB
@@ -471,6 +474,9 @@ pub fn start_level_meter(app_handle: tauri::AppHandle) -> Result<(), String> {
                     .map(|(angle, radius)| [angle, radius])
                     .collect();
 
+                // Get plugin performance metrics (only if monitoring is enabled)
+                let plugin_performance = handle.get_plugin_performance();
+
                 // Send combined metering data with dB values, waveform, and clipping indicators
                 let metering = MeteringData {
                     left,
@@ -497,6 +503,7 @@ pub fn start_level_meter(app_handle: tauri::AppHandle) -> Result<(), String> {
                     stereo_correlation,
                     stereo_positions_input,
                     stereo_correlation_input,
+                    plugin_performance,
                 };
                 let _ = app_handle.emit("preview-metering", &metering);
             } else {
@@ -727,6 +734,24 @@ pub fn plugin_close_editor() -> Result<(), String> {
 pub fn plugin_is_editor_open() -> Result<bool, String> {
     let handle = get_engine_handle().ok_or_else(|| "Audio engine not initialized".to_string())?;
     Ok(handle.is_plugin_editor_open())
+}
+
+/// Enable or disable plugin performance monitoring
+/// When enabled, the engine measures plugin.process() call duration
+/// When disabled, no timing overhead is incurred (zero overhead design)
+#[tauri::command]
+pub fn enable_performance_monitoring(enabled: bool) -> Result<(), String> {
+    let handle = get_engine_handle().ok_or_else(|| "Audio engine not initialized".to_string())?;
+    handle.set_performance_monitoring(enabled);
+    log::info!("Performance monitoring {}", if enabled { "enabled" } else { "disabled" });
+    Ok(())
+}
+
+/// Check if performance monitoring is currently enabled
+#[tauri::command]
+pub fn is_performance_monitoring_enabled() -> Result<bool, String> {
+    let handle = get_engine_handle().ok_or_else(|| "Audio engine not initialized".to_string())?;
+    Ok(handle.is_performance_monitoring_enabled())
 }
 
 /// Process plugin idle tasks (flush params, handle callbacks)

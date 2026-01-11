@@ -6,7 +6,7 @@ use rubato::{FftFixedInOut, Resampler};
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::path::Path;
-use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU8, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicU8, Ordering};
 use std::sync::Arc;
 
 use super::buffer::StereoSample;
@@ -246,6 +246,13 @@ struct SharedState {
     // Plugin editor window position (persists across plugin reload for hot reload)
     // This is stored at engine level so it survives plugin unload/reload cycles
     last_editor_position: RwLock<Option<(f64, f64)>>,
+    // Performance monitoring (disabled by default for zero overhead)
+    // When enabled, clap_host measures plugin.process() call duration
+    perf_monitoring_enabled: AtomicBool,
+    // Plugin process() duration in nanoseconds (only updated when monitoring enabled)
+    perf_plugin_process_ns: AtomicU64,
+    // Number of samples processed in last callback (for CPU% calculation)
+    perf_samples_processed: AtomicU32,
 }
 
 /// Helper to store f32 in AtomicU32
@@ -644,6 +651,10 @@ impl AudioEngineHandle {
         // Clear MIDI queue reference first (allows immediate MIDI rejection)
         *self.shared.midi_queue.write() = None;
 
+        // Clear performance metrics (stale data shouldn't persist after unload)
+        self.shared.perf_plugin_process_ns.store(0, Ordering::Relaxed);
+        self.shared.perf_samples_processed.store(0, Ordering::Relaxed);
+
         let mut plugin_lock = self.shared.plugin_instance.write();
         if let Some(mut plugin) = plugin_lock.take() {
             plugin.stop_processing();
@@ -833,6 +844,88 @@ impl AudioEngineHandle {
     pub fn is_crossfade_complete(&self) -> bool {
         self.shared.crossfade_state.load(Ordering::SeqCst) == CROSSFADE_NONE
     }
+
+    // ==================== Performance Monitoring ====================
+
+    /// Enable or disable performance monitoring
+    /// When disabled, no timing overhead is incurred in the audio callback
+    pub fn set_performance_monitoring(&self, enabled: bool) {
+        self.shared.perf_monitoring_enabled.store(enabled, Ordering::SeqCst);
+        if !enabled {
+            // Clear metrics when disabling
+            self.shared.perf_plugin_process_ns.store(0, Ordering::Relaxed);
+            self.shared.perf_samples_processed.store(0, Ordering::Relaxed);
+        }
+    }
+
+    /// Check if performance monitoring is enabled
+    pub fn is_performance_monitoring_enabled(&self) -> bool {
+        self.shared.perf_monitoring_enabled.load(Ordering::Relaxed)
+    }
+
+    /// Update performance metrics from clap_host (called after plugin processing)
+    /// This method exists for direct updates when atomics can't be shared
+    pub fn update_perf_metrics(&self, process_time_ns: u64, samples: u32) {
+        self.shared.perf_plugin_process_ns.store(process_time_ns, Ordering::Relaxed);
+        self.shared.perf_samples_processed.store(samples, Ordering::Relaxed);
+    }
+
+    /// Get current plugin performance metrics
+    /// Returns None if monitoring is disabled or no valid data
+    pub fn get_plugin_performance(&self) -> Option<PluginPerformance> {
+        if !self.shared.perf_monitoring_enabled.load(Ordering::Relaxed) {
+            return None;
+        }
+
+        let process_time_ns = self.shared.perf_plugin_process_ns.load(Ordering::Relaxed);
+        let samples = self.shared.perf_samples_processed.load(Ordering::Relaxed);
+
+        // Defensive checks - return None for invalid data
+        if samples == 0 || self.sample_rate == 0 {
+            return None;
+        }
+
+        // Calculate CPU percentage: process_time / buffer_duration * 100
+        // buffer_duration_ns = (samples / sample_rate) * 1_000_000_000
+        let buffer_duration_ns = (samples as u64 * 1_000_000_000) / self.sample_rate as u64;
+        let cpu_percent = if buffer_duration_ns > 0 {
+            (process_time_ns as f64 / buffer_duration_ns as f64) * 100.0
+        } else {
+            0.0
+        };
+
+        let per_sample_ns = if samples > 0 {
+            process_time_ns as f32 / samples as f32
+        } else {
+            0.0
+        };
+
+        Some(PluginPerformance {
+            process_time_ns,
+            samples_processed: samples,
+            sample_rate: self.sample_rate,
+            buffer_duration_ns,
+            cpu_percent: cpu_percent as f32,
+            per_sample_ns,
+        })
+    }
+}
+
+/// Plugin performance metrics (only populated when monitoring is enabled)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PluginPerformance {
+    /// Time spent inside plugin.process() in nanoseconds
+    pub process_time_ns: u64,
+    /// Number of samples processed in this buffer
+    pub samples_processed: u32,
+    /// Current sample rate
+    pub sample_rate: u32,
+    /// Expected real-time duration of the buffer in nanoseconds
+    pub buffer_duration_ns: u64,
+    /// Percentage of real-time budget used (process_time / buffer_duration * 100)
+    pub cpu_percent: f32,
+    /// Cost per sample in nanoseconds (process_time / samples)
+    pub per_sample_ns: f32,
 }
 
 /// The main audio engine
@@ -904,6 +997,10 @@ impl AudioEngine {
             crossfade_state: AtomicU8::new(CROSSFADE_NONE),
             crossfade_position: AtomicU32::new(0),
             last_editor_position: RwLock::new(None),
+            // Performance monitoring disabled by default (zero overhead when off)
+            perf_monitoring_enabled: AtomicBool::new(false),
+            perf_plugin_process_ns: AtomicU64::new(0),
+            perf_samples_processed: AtomicU32::new(0),
         });
 
         let shared_clone = Arc::clone(&shared);
@@ -1140,9 +1237,27 @@ impl AudioEngine {
                         // If main thread holds the lock (during reload/param update), pass through input unchanged
                         let plugin_processed = if let Some(mut plugin_lock) = shared_clone.plugin_instance.try_write() {
                             if let Some(ref mut plugin) = *plugin_lock {
-                                plugin
+                                // Performance monitoring: time only the plugin.process() call
+                                // Check flag first to avoid Instant::now() overhead when disabled
+                                let perf_enabled = shared_clone.perf_monitoring_enabled.load(Ordering::Relaxed);
+                                let start_time = if perf_enabled {
+                                    Some(std::time::Instant::now())
+                                } else {
+                                    None
+                                };
+
+                                let result = plugin
                                     .process(&input_buffer[..data.len()], &mut output_buffer[..data.len()])
-                                    .is_ok()
+                                    .is_ok();
+
+                                // Store timing if monitoring was enabled
+                                if let Some(start) = start_time {
+                                    let elapsed_ns = start.elapsed().as_nanos() as u64;
+                                    shared_clone.perf_plugin_process_ns.store(elapsed_ns, Ordering::Relaxed);
+                                    shared_clone.perf_samples_processed.store((data.len() / channels) as u32, Ordering::Relaxed);
+                                }
+
+                                result
                             } else {
                                 false
                             }

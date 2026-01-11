@@ -4,6 +4,7 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+import type { PluginPerformance } from '../types';
 
 export interface AudioDeviceInfo {
   name: string;
@@ -227,6 +228,8 @@ export interface MeteringData {
   stereo_positions_input: [number, number][];
   /** INPUT stereo correlation coefficient (-1.0 to +1.0) - pre-FX */
   stereo_correlation_input: number;
+  /** Plugin performance metrics (only present when monitoring is enabled) */
+  plugin_performance?: PluginPerformance;
 }
 
 /**
@@ -396,6 +399,26 @@ export async function pluginCloseEditor(): Promise<void> {
  */
 export async function pluginIsEditorOpen(): Promise<boolean> {
   return await invoke('plugin_is_editor_open');
+}
+
+// =============================================================================
+// Performance Monitoring
+// =============================================================================
+
+/**
+ * Enable or disable plugin performance monitoring
+ * When enabled, the engine measures plugin.process() call duration
+ * When disabled, no timing overhead is incurred (zero overhead design)
+ */
+export async function enablePerformanceMonitoring(enabled: boolean): Promise<void> {
+  await invoke('enable_performance_monitoring', { enabled });
+}
+
+/**
+ * Check if performance monitoring is currently enabled
+ */
+export async function isPerformanceMonitoringEnabled(): Promise<boolean> {
+  return await invoke('is_performance_monitoring_enabled');
 }
 
 /**

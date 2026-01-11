@@ -101,6 +101,8 @@ pub fn run() {
             commands::preview::plugin_open_editor,
             commands::preview::plugin_close_editor,
             commands::preview::plugin_is_editor_open,
+            commands::preview::enable_performance_monitoring,
+            commands::preview::is_performance_monitoring_enabled,
             commands::preview::plugin_idle,
             commands::preview::plugin_reload,
             // Live input commands

@@ -12,6 +12,7 @@ import { InstrumentControls } from './InstrumentControls';
 import { SampleInputControls } from './SampleInputControls';
 import { SignalInputControls } from './SignalInputControls';
 import { OutputSection } from './OutputSection';
+import PerformanceMonitor from './PerformanceMonitor';
 import { TransportBar } from './TransportBar';
 import { useShallow } from 'zustand/react/shallow';
 
@@ -118,9 +119,39 @@ export function PreviewPanel() {
     input: false,
     transport: false,
     output: false,  // Open by default (contains spectrum analyzer)
+    performance: true,  // Collapsed by default
     plugin: false,
     build: true,    // Collapsed by default
   });
+  // Performance monitoring state
+  const [showPerformance, setShowPerformance] = useState(false);
+  const showPerformanceRef = useRef(false);
+  showPerformanceRef.current = showPerformance;
+
+  // Toggle performance monitoring - calls backend to enable/disable timing
+  const handleTogglePerformance = useCallback(async () => {
+    const newEnabled = !showPerformance;
+    setShowPerformance(newEnabled);
+    try {
+      await previewApi.enablePerformanceMonitoring(newEnabled);
+    } catch (error) {
+      console.error('Failed to toggle performance monitoring:', error);
+      // Revert state on error
+      setShowPerformance(!newEnabled);
+    }
+  }, [showPerformance]);
+
+  // Disable backend performance monitoring when component unmounts (project switch, panel close)
+  useEffect(() => {
+    return () => {
+      if (showPerformanceRef.current) {
+        previewApi.enablePerformanceMonitoring(false).catch(() => {
+          // Ignore errors during cleanup
+        });
+      }
+    };
+  }, []);
+
   // Track current MIDI source tab for instruments (for TransportBar indicator)
   const [instrumentMidiSource, setInstrumentMidiSource] = useState<'piano' | 'patterns' | 'midi' | 'live'>('patterns');
   const levelListenerRef = useRef<(() => void) | null>(null);
@@ -209,6 +240,8 @@ export function PreviewPanel() {
                 // Input stereo (pre-FX)
                 stereoPositionsInput: data.stereo_positions_input,
                 stereoCorrelationInput: data.stereo_correlation_input,
+                // Plugin performance (only when monitoring enabled)
+                pluginPerformance: data.plugin_performance,
               });
             });
           }),
@@ -762,11 +795,27 @@ export function PreviewPanel() {
               <div className="border-b border-border pb-2">
                 {renderSectionHeader('output', 'Analysis',
                   <svg className="w-4 h-4 text-text-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
                   </svg>
                 )}
                 {!collapsedSections.output && (
                   <OutputSection isOpen={isOpen} isVisible={!collapsedSections.output} pluginType={effectivePluginType} />
+                )}
+              </div>
+
+              {/* Performance Section (Plugin CPU monitoring) */}
+              <div className="border-b border-border pb-2">
+                {renderSectionHeader('performance', 'Performance',
+                  <svg className="w-4 h-4 text-text-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                    {/* Speedometer/gauge icon */}
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6l4 2m6-2a10 10 0 11-20 0 10 10 0 0120 0z" />
+                  </svg>
+                )}
+                {!collapsedSections.performance && (
+                  <PerformanceMonitor
+                    enabled={showPerformance}
+                    onToggle={handleTogglePerformance}
+                  />
                 )}
               </div>
 
