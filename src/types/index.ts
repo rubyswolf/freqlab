@@ -42,6 +42,16 @@ export interface AudioSettings {
   bufferSize: number;
 }
 
+// Plugin performance metrics (only present when monitoring is enabled)
+export interface PluginPerformance {
+  process_time_ns: number;      // Time spent in plugin.process() in nanoseconds
+  samples_processed: number;    // Number of samples in buffer
+  sample_rate: number;          // Current sample rate
+  buffer_duration_ns: number;   // Expected real-time budget in nanoseconds
+  cpu_percent: number;          // Percentage of budget used (process_time / buffer_duration * 100)
+  per_sample_ns: number;        // Cost per sample in nanoseconds
+}
+
 export type ChatStyle = 'minimal' | 'conversational';
 
 export type ClaudeModel = 'haiku' | 'sonnet' | 'opus';

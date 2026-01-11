@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { PluginState } from '../api/preview';
+import type { PluginPerformance } from '../types';
 
 export type InputSourceType = 'sample' | 'signal' | 'custom' | 'live';
 export type SignalType = 'sine' | 'white_noise' | 'pink_noise' | 'impulse' | 'sweep' | 'square';
@@ -72,6 +73,8 @@ export interface OutputMetering {
   // Input stereo imaging data (pre-FX)
   stereoPositionsInput: [number, number][];
   stereoCorrelationInput: number;
+  // Plugin performance (only present when monitoring enabled)
+  pluginPerformance?: PluginPerformance;
 }
 
 interface PreviewState {
@@ -194,6 +197,8 @@ const defaultMetering: OutputMetering = {
   // Input stereo (pre-FX)
   stereoPositionsInput: [],
   stereoCorrelationInput: 1.0,
+  // Plugin performance (undefined when monitoring disabled)
+  pluginPerformance: undefined,
 };
 
 const initialState = {
