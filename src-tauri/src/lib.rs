@@ -1,7 +1,7 @@
 pub mod audio;
 mod commands;
 
-use tauri::RunEvent;
+use tauri::{Manager, RunEvent};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -147,10 +147,21 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application");
 
-    app.run(|_app_handle, event| {
-        if let RunEvent::Exit = event {
-            // Clean up any spawned child processes when the app exits
-            commands::cleanup_child_processes();
+    app.run(|app_handle, event| {
+        match event {
+            RunEvent::Exit => {
+                // Clean up any spawned child processes when the app exits
+                commands::cleanup_child_processes();
+            }
+            #[cfg(target_os = "macos")]
+            RunEvent::Reopen { .. } => {
+                // When user clicks dock icon, bring main window to front
+                if let Some(window) = app_handle.get_webview_window("main") {
+                    let _ = window.show();
+                    let _ = window.set_focus();
+                }
+            }
+            _ => {}
         }
     });
 }
