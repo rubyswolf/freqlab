@@ -149,11 +149,10 @@ fn hard_clip(x: f32, threshold: f32) -> f32 {
 }
 ```
 
-### Safety Limiter (0dB)
+### NaN/Inf Protection
 ```rust
-fn safety_limit(sample: f32) -> f32 {
-    sample.clamp(-1.0, 1.0)
-}
+// Check AFTER all DSP - do NOT use clamp() as a limiter
+if !sample.is_finite() { *sample = 0.0; }
 ```
 
 ### dB Conversions

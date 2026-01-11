@@ -56,10 +56,14 @@ export type ChatStyle = 'minimal' | 'conversational';
 
 export type ClaudeModel = 'haiku' | 'sonnet' | 'opus';
 
+// Controls how verbose/detailed the agent is in responses
+export type AgentVerbosity = 'thorough' | 'balanced' | 'direct';
+
 export interface AISettings {
   chatStyle: ChatStyle;
   model: ClaudeModel;
   customInstructions: string;
+  agentVerbosity: AgentVerbosity;
 }
 
 export interface AppConfig {

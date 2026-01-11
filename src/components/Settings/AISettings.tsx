@@ -1,8 +1,14 @@
 import { useSettingsStore } from '../../stores/settingsStore';
-import type { ClaudeModel } from '../../types';
+import type { ClaudeModel, AgentVerbosity } from '../../types';
 
 interface ModelOption {
   id: ClaudeModel;
+  label: string;
+  description: string;
+}
+
+interface VerbosityOption {
+  id: AgentVerbosity;
   label: string;
   description: string;
 }
@@ -13,8 +19,14 @@ const modelOptions: ModelOption[] = [
   { id: 'opus', label: 'Opus', description: 'Senior audio engineer' },
 ];
 
+const verbosityOptions: VerbosityOption[] = [
+  { id: 'direct', label: 'Direct', description: 'Minimal questions, just implement' },
+  { id: 'balanced', label: 'Balanced', description: 'A few key questions, then implement' },
+  { id: 'thorough', label: 'Thorough', description: 'Detailed exploration before implementing' },
+];
+
 export function AISettings() {
-  const { aiSettings, setChatStyle, setModel, setCustomInstructions } = useSettingsStore();
+  const { aiSettings, setChatStyle, setModel, setCustomInstructions, setAgentVerbosity } = useSettingsStore();
 
   return (
     <div className="space-y-5">
@@ -50,6 +62,33 @@ export function AISettings() {
           >
             Minimal
           </button>
+        </div>
+      </div>
+
+      {/* Agent Verbosity - toggle */}
+      <div className="flex items-center justify-between">
+        <div>
+          <label className="block text-sm font-medium text-text-primary">Response Style</label>
+          <p className="text-xs text-text-muted">
+            {verbosityOptions.find(v => v.id === aiSettings.agentVerbosity)?.description}
+          </p>
+        </div>
+        <div className="flex rounded-lg border border-border overflow-hidden">
+          {verbosityOptions.map((option, index) => (
+            <button
+              key={option.id}
+              onClick={() => setAgentVerbosity(option.id)}
+              className={`px-3 py-1.5 text-sm transition-colors ${
+                index > 0 ? 'border-l border-border' : ''
+              } ${
+                aiSettings.agentVerbosity === option.id
+                  ? 'bg-accent text-white'
+                  : 'bg-bg-primary text-text-secondary hover:text-text-primary'
+              }`}
+            >
+              {option.label}
+            </button>
+          ))}
         </div>
       </div>
 

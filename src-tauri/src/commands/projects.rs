@@ -213,6 +213,70 @@ fn generate_vst3_id(name: &str) -> String {
         .collect()
 }
 
+/// Generate .claude/commands/ with project-specific skills
+/// Skills are generated based on the project's template, UI framework, and components
+fn generate_project_skills(
+    project_path: &std::path::Path,
+    template: &str,
+    ui_framework: &str,
+    components: Option<&Vec<String>>,
+) -> Result<(), String> {
+    use super::claude_skills;
+
+    let commands_dir = project_path.join(".claude/commands");
+    fs::create_dir_all(&commands_dir)
+        .map_err(|e| format!("Failed to create .claude/commands: {}", e))?;
+
+    // Always generate core skills (DSP safety, nih-plug basics)
+    fs::write(commands_dir.join("dsp-safety.md"), claude_skills::DSP_SAFETY)
+        .map_err(|e| format!("Failed to write dsp-safety.md: {}", e))?;
+    fs::write(commands_dir.join("nih-plug-basics.md"), claude_skills::NIH_PLUG_BASICS)
+        .map_err(|e| format!("Failed to write nih-plug-basics.md: {}", e))?;
+
+    // Generate UI framework skill based on selection (only one)
+    match ui_framework {
+        "webview" => {
+            fs::write(commands_dir.join("webview-ui.md"), claude_skills::WEBVIEW_UI)
+                .map_err(|e| format!("Failed to write webview-ui.md: {}", e))?;
+        }
+        "egui" => {
+            fs::write(commands_dir.join("egui-ui.md"), claude_skills::EGUI_UI)
+                .map_err(|e| format!("Failed to write egui-ui.md: {}", e))?;
+        }
+        "native" => {
+            fs::write(commands_dir.join("native-ui.md"), claude_skills::NATIVE_UI)
+                .map_err(|e| format!("Failed to write native-ui.md: {}", e))?;
+        }
+        _ => {}
+    }
+
+    // Generate plugin type skill based on template (only one)
+    match template {
+        "effect" => {
+            fs::write(commands_dir.join("effect-patterns.md"), claude_skills::EFFECT_PATTERNS)
+                .map_err(|e| format!("Failed to write effect-patterns.md: {}", e))?;
+        }
+        "instrument" => {
+            fs::write(commands_dir.join("instrument-patterns.md"), claude_skills::INSTRUMENT_PATTERNS)
+                .map_err(|e| format!("Failed to write instrument-patterns.md: {}", e))?;
+        }
+        _ => {}
+    }
+
+    // Generate component skills if any were selected
+    if let Some(comps) = components {
+        for component in comps {
+            if let Some(skill_content) = claude_skills::get_component_skill(component) {
+                let filename = format!("{}.md", component.replace('_', "-"));
+                fs::write(commands_dir.join(&filename), skill_content)
+                    .map_err(|e| format!("Failed to write {}: {}", filename, e))?;
+            }
+        }
+    }
+
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn create_project(input: CreateProjectInput) -> Result<ProjectMeta, String> {
     validate_name(&input.name)?;
@@ -383,6 +447,9 @@ strip = "symbols"
     );
     fs::write(project_path.join("CLAUDE.md"), claude_md_content)
         .map_err(|e| format!("Failed to write CLAUDE.md: {}", e))?;
+
+    // Generate .claude/commands/ with project-specific skills
+    generate_project_skills(&project_path, &input.template, &input.ui_framework, input.components.as_ref())?;
 
     // Initialize git repository for version control
     // These operations now run on a blocking thread pool to avoid UI freezes

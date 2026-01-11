@@ -286,11 +286,39 @@ A local clone of the nih-plug repository is available at: {docs_path}
 
 When modifying the plugin:
 1. Read src/lib.rs first to understand current state
-2. Edit src/lib.rs with your changes
-3. Keep code clean and well-commented
-4. Use proper DSP practices (avoid denormals, handle edge cases)
-5. Always check for NaN/Inf values in output (use `if !sample.is_finite() {{ *sample = 0.0; }}`) - do NOT hard-limit with clamp()
-6. Briefly summarize what you changed after making edits
+2. **Invoke relevant skills** from `.claude/commands/` when you need detailed patterns (e.g., `/dsp-safety`, `/effect-patterns`)
+3. Edit src/lib.rs with your changes
+4. Keep code clean and well-commented
+5. Use proper DSP practices (avoid denormals, handle edge cases)
+6. Always check for NaN/Inf values in output (use `if !sample.is_finite() {{ *sample = 0.0; }}`) - do NOT hard-limit with clamp()
+7. Briefly summarize what you changed after making edits
+
+The project's CLAUDE.md contains a skill manifest - see "Available Skills" section for what's available.
+
+## Communication Style (IMPORTANT)
+
+The user is a sound designer or producer, not a programmer.
+
+**NEVER use "build" terminology** - The user has a Build button in the app, so this causes confusion:
+- ❌ "I'll build the project" → ✅ "I'll check the code compiles"
+- ❌ "Build successful!" / "Build complete!" → ✅ "Looks good! Click Build to try it."
+- ❌ "The build finished" → ✅ "Testing complete" or "Code verified"
+- ❌ "Let me build this feature" → ✅ "Let me implement this feature"
+
+**NEVER mention internal files to the user:**
+- ❌ "Now let me update CLAUDE.md with the implementation details"
+- ❌ "I'll update the CLAUDE.md file"
+- ✅ "Updating my notes" or just don't mention it at all
+- Internal documentation updates should happen silently
+
+**Focus on features, not code:**
+- ❌ "I added a process_sample function that takes an f32..." → ✅ "I added the distortion processing."
+- ❌ "The UIMessage enum has a new variant..." → ✅ "The cutoff knob now works."
+- ❌ "I modified the Params struct to include..." → ✅ "I added a new parameter for..."
+- Keep responses concise and focused on what the plugin does, not how the code works
+
+**DO be technical about audio** (filters, oscillators, envelopes, MIDI, signal flow).
+**DON'T be technical about code** (structs, functions, Rust syntax) unless the user specifically asks.
 
 The user will describe what they want. Make the changes directly to the code."#,
         project_name = project_name,
@@ -304,17 +332,21 @@ The user will describe what they want. Make the changes directly to the code."#,
         if let Some(comps) = components {
             if !comps.is_empty() {
                 context.push_str("\n\n--- STARTER COMPONENTS ---\n");
-                context.push_str("The user selected the following starter components when creating this plugin.\n");
-                context.push_str("On the FIRST user message, implement scaffolding for these components:\n\n");
+                context.push_str("The user selected the following starter components when creating this plugin:\n\n");
 
                 for comp_id in comps {
                     let desc = get_component_description(comp_id);
                     context.push_str(&format!("- {}: {}\n", comp_id, desc));
                 }
 
-                context.push_str("\nGenerate working skeleton code for each component. ");
-                context.push_str("Include TODO comments where the user will need to customize behavior. ");
-                context.push_str("Make sure the plugin still compiles and runs after adding components.");
+                context.push_str("\n**When to implement these:**\n");
+                context.push_str("- If the user asks to start working on the plugin, build features, or requests functionality → implement the scaffolding\n");
+                context.push_str("- If the user just says hi, asks questions, or wants to discuss the plugin first → answer them and mention these components are ready to implement when they're ready\n");
+                context.push_str("- When implementing, invoke the relevant skill (e.g., `/polyphony`) for detailed patterns\n\n");
+                context.push_str("**Implementation requirements:**\n");
+                context.push_str("- Generate working skeleton code that compiles\n");
+                context.push_str("- Include TODO comments where the user will need to customize behavior\n");
+                context.push_str("- Make sure the plugin still runs after adding components\n");
             }
         }
     }
@@ -346,6 +378,7 @@ pub async fn send_to_claude(
     message: String,
     model: Option<String>,
     custom_instructions: Option<String>,
+    agent_verbosity: Option<String>,
     window: tauri::Window,
 ) -> Result<ClaudeResponse, String> {
     // Ensure git is initialized for this project (handles existing projects)
@@ -372,14 +405,24 @@ pub async fn send_to_claude(
     // Build context with components info and project-specific CLAUDE.md
     let context = build_context(&project_name, &description, &project_path, components, is_first_message);
 
+    // Get verbosity style (default to balanced)
+    let verbosity = agent_verbosity.as_deref().unwrap_or("balanced");
+
+    // Prepend style hint to message (reinforces on every turn, even resumed sessions)
+    let styled_message = match verbosity {
+        "direct" => format!("[Response Style: Direct - minimal questions, implement immediately, 1-3 sentences max]\n\n{}", message),
+        "thorough" => format!("[Response Style: Thorough - ask clarifying questions, explore options before implementing]\n\n{}", message),
+        _ => format!("[Response Style: Balanced - ask 1-2 key questions if needed, then implement]\n\n{}", message),
+    };
+
     // Build args - include --resume if we have an existing session
     let mut args = vec![
         "-p".to_string(),
-        message.clone(),
+        styled_message.clone(),
         "--verbose".to_string(),
         "--allowedTools".to_string(),
-        // Allow file ops, bash for cargo commands, grep/glob for searching, and web access
-        "Edit,Write,Read,Bash,Grep,Glob,WebSearch,WebFetch".to_string(),
+        // Allow file ops, bash for cargo commands, grep/glob for searching, web access, and skills
+        "Edit,Write,Read,Bash,Grep,Glob,WebSearch,WebFetch,Skill".to_string(),
         "--output-format".to_string(),
         "stream-json".to_string(),
         "--max-turns".to_string(),
@@ -395,16 +438,46 @@ pub async fn send_to_claude(
     // Only add system prompt on first message (new session)
     // For resumed sessions, Claude already has the context
     if existing_session.is_none() {
-        // Build full system prompt with custom instructions if provided
-        let full_context = if let Some(ref instructions) = custom_instructions {
-            if !instructions.trim().is_empty() {
-                format!("{}\n\n--- USER PREFERENCES ---\n{}", context, instructions.trim())
-            } else {
-                context
-            }
-        } else {
-            context
+        // Add verbosity instructions based on setting
+        let verbosity_instructions = match verbosity {
+            "direct" => r#"
+## Response Style: Direct
+
+- Do NOT use the brainstorming skill
+- Do NOT ask clarifying questions unless you truly cannot proceed
+- Make sensible default choices and implement immediately
+- Keep responses to 1-3 sentences max
+- User says "add reverb" → just implement a reverb, don't ask what kind
+- If you need to make assumptions, make them and briefly mention what you chose
+"#,
+            "thorough" => r#"
+## Response Style: Thorough
+
+- Use the brainstorming skill for new features
+- Ask clarifying questions at each decision point
+- Present options and let the user choose
+- Explain your reasoning and design decisions
+- Take time to understand requirements before implementing
+"#,
+            _ => r#"
+## Response Style: Balanced
+
+- Ask 1-2 key questions to understand intent, then implement
+- Don't use brainstorming skill unless user explicitly asks to explore options
+- Make reasonable default choices, mention what you chose briefly
+- Keep responses concise - focus on what you're doing, not lengthy explanations
+"#,
         };
+
+        // Build full system prompt with verbosity and custom instructions
+        let mut full_context = format!("{}\n{}", context, verbosity_instructions);
+
+        if let Some(ref instructions) = custom_instructions {
+            if !instructions.trim().is_empty() {
+                full_context.push_str(&format!("\n\n--- USER PREFERENCES ---\n{}", instructions.trim()));
+            }
+        }
+
         args.push("--append-system-prompt".to_string());
         args.push(full_context);
     }
