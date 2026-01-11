@@ -20,6 +20,7 @@ interface ToastState {
   addToast: (toast: Omit<Toast, 'id'>) => string;
   removeToast: (id: string) => void;
   clearToasts: () => void;
+  clearErrorToasts: () => void;
 }
 
 export const useToastStore = create<ToastState>((set) => ({
@@ -52,5 +53,11 @@ export const useToastStore = create<ToastState>((set) => ({
 
   clearToasts: () => {
     set({ toasts: [] });
+  },
+
+  clearErrorToasts: () => {
+    set((state) => ({
+      toasts: state.toasts.filter((t) => t.type !== 'error'),
+    }));
   },
 }));

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { Header } from './Header'
 import { Sidebar } from './Sidebar'
@@ -14,6 +14,13 @@ import { useProjectStore } from '../../stores/projectStore'
 import { useToastStore } from '../../stores/toastStore'
 import { usePreviewStore } from '../../stores/previewStore'
 import { useTourStore } from '../../stores/tourStore'
+import {
+    previewStop,
+    pluginUnload,
+    patternStop,
+    midiFileStop,
+    midiAllNotesOff
+} from '../../api/preview'
 
 interface AvailableFormats {
     vst3: boolean
@@ -50,6 +57,21 @@ export function MainLayout() {
     const selectProject = useProjectStore.getState().selectProject
     const updateProject = useProjectStore.getState().updateProject
     const addToast = useToastStore.getState().addToast
+    const clearErrorToasts = useToastStore.getState().clearErrorToasts
+    const resetPreviewStore = usePreviewStore.getState().reset
+
+    // Track previous project to detect switches
+    const prevProjectPathRef = useRef<string | null>(null)
+
+    // Clear error toasts when switching projects
+    useEffect(() => {
+        const currentPath = activeProject?.path ?? null
+        if (prevProjectPathRef.current !== null && prevProjectPathRef.current !== currentPath) {
+            // Project changed - clear error toasts
+            clearErrorToasts()
+        }
+        prevProjectPathRef.current = currentPath
+    }, [activeProject?.path, clearErrorToasts])
 
     // Check if a build exists for the current version
     // Called on project change and version change
@@ -142,6 +164,23 @@ export function MainLayout() {
     const handleDelete = async () => {
         if (!activeProject) return
         try {
+            // Stop all playback before deleting
+            try {
+                await previewStop()
+                await patternStop()
+                await midiFileStop()
+                await midiAllNotesOff()
+                await pluginUnload()
+            } catch {
+                // Ignore playback stop errors - best effort cleanup
+            }
+
+            // Reset preview store to clean state
+            resetPreviewStore()
+
+            // Clear any error toasts from the deleted project
+            clearErrorToasts()
+
             // Use folder name (from path), not display name, for delete operation
             const folderName = getFolderName(activeProject.path)
             await deleteProject(folderName, activeProject.path)
@@ -172,14 +211,14 @@ export function MainLayout() {
                     <div className="flex-1 overflow-auto p-6">
                         {activeProject ? (
                             <div className="h-full flex flex-col">
-                                <div className="mb-4 flex items-start justify-between">
-                                    <div>
+                                <div className="mb-4 flex items-start justify-between gap-4">
+                                    <div className="min-w-0 flex-1">
                                         <div className="flex items-center gap-2">
-                                            <h2 className="text-xl font-semibold text-text-primary">
+                                            <h2 className="text-xl font-semibold text-text-primary truncate">
                                                 {activeProject.name}
                                             </h2>
                                             <span
-                                                className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                                                className={`flex-shrink-0 text-xs px-2 py-0.5 rounded-full font-medium ${
                                                     activeProject.template === 'instrument'
                                                         ? 'bg-amber-500/15 text-amber-400'
                                                         : 'bg-blue-500/15 text-blue-400'
@@ -188,20 +227,26 @@ export function MainLayout() {
                                                 {activeProject.template === 'instrument' ? 'Instrument' : 'Effect'}
                                             </span>
                                         </div>
-                                        <p className="text-sm text-text-muted mt-1 line-clamp-2 break-words">
-                                            {activeProject.description || 'No description'}
+                                        <p className="text-sm text-text-muted mt-1 truncate">
+                                            {activeProject.description
+                                                ? activeProject.description.length > 80
+                                                    ? `${activeProject.description.slice(0, 80)}...`
+                                                    : activeProject.description
+                                                : 'No description'}
                                         </p>
                                     </div>
-                                    <ProjectActionBar
-                                        project={activeProject}
-                                        hasBuild={hasBuild}
-                                        onBuildComplete={checkBuildExists}
-                                        onPublishClick={() => setIsPublishModalOpen(true)}
-                                        onEditClick={handleOpenEditModal}
-                                        onDeleteClick={handleDeleteClick}
-                                        onOpenFolder={handleOpenFolder}
-                                        onOpenInEditor={handleOpenInEditor}
-                                    />
+                                    <div className="flex-shrink-0">
+                                        <ProjectActionBar
+                                            project={activeProject}
+                                            hasBuild={hasBuild}
+                                            onBuildComplete={checkBuildExists}
+                                            onPublishClick={() => setIsPublishModalOpen(true)}
+                                            onEditClick={handleOpenEditModal}
+                                            onDeleteClick={handleDeleteClick}
+                                            onOpenFolder={handleOpenFolder}
+                                            onOpenInEditor={handleOpenInEditor}
+                                        />
+                                    </div>
                                 </div>
                                 <div className="flex-1 min-h-0">
                                     {/* Key by project path to force full remount when switching projects */}

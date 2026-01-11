@@ -103,6 +103,7 @@ export function ProjectActionBar({
 
     // === STABLE ACTION REFERENCES ===
     const addToast = useToastStore.getState().addToast
+    const clearErrorToasts = useToastStore.getState().clearErrorToasts
     const queueMessage = useChatStore.getState().queueMessage
     const setBuildingPath = useProjectBusyStore.getState().setBuildingPath
     const clearBuildingIfMatch = useProjectBusyStore.getState().clearBuildingIfMatch
@@ -264,7 +265,9 @@ export function ProjectActionBar({
         const relevantError = errorLines.slice(-30).join('\n')
         queueMessage(`The build failed with this error:\n\n\`\`\`\n${relevantError}\n\`\`\`\n\nPlease fix this issue.`)
         setLastBuildError(null)
-    }, [lastBuildError, queueMessage])
+        // Clear any error toasts (including the "Build failed" toast with Fix It action)
+        clearErrorToasts()
+    }, [lastBuildError, queueMessage, clearErrorToasts])
 
     const handleQuickAction = useCallback((action: () => void) => {
         setShowQuickActions(false)

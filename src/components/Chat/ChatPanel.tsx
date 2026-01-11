@@ -68,9 +68,12 @@ export function ChatPanel({ project, onVersionChange }: ChatPanelProps) {
   });
   const [isHistoryLoaded, setIsHistoryLoaded] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
   const versionBadgeRef = useRef<HTMLSpanElement>(null);
   const chatPanelRef = useRef<HTMLDivElement>(null);
   const messagesRef = useRef<ChatMessageType[]>([]);
+  // Track if user is at bottom of scroll (within threshold)
+  const isAtBottomRef = useRef(true);
   const isInitialMount = useRef(true);
   const isSavingRef = useRef(false);
   const saveQueueRef = useRef<ChatMessageType[] | null>(null);
@@ -316,15 +319,50 @@ export function ChatPanel({ project, onVersionChange }: ChatPanelProps) {
     if (!isHistoryLoaded) {
       // Still loading - use instant scroll (will be hidden during fade anyway)
       messagesEndRef.current?.scrollIntoView({ behavior: 'instant' });
+      isAtBottomRef.current = true;
     } else if (isInitialMount.current) {
       // History just loaded - instant scroll then mark mount complete
       messagesEndRef.current?.scrollIntoView({ behavior: 'instant' });
       isInitialMount.current = false;
+      isAtBottomRef.current = true;
     } else {
       // Normal chat flow - smooth scroll for new messages
       messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      isAtBottomRef.current = true;
     }
   }, [messages, streamingContent, isHistoryLoaded]);
+
+  // Track scroll position to determine if user is at bottom
+  useEffect(() => {
+    const container = messagesContainerRef.current;
+    if (!container) return;
+
+    const handleScroll = () => {
+      const { scrollTop, scrollHeight, clientHeight } = container;
+      // Consider "at bottom" if within 50px of the bottom
+      const threshold = 50;
+      isAtBottomRef.current = scrollHeight - scrollTop - clientHeight < threshold;
+    };
+
+    container.addEventListener('scroll', handleScroll, { passive: true });
+    return () => container.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  // Maintain scroll position on container resize (e.g., preview panel opens/closes)
+  useEffect(() => {
+    const container = messagesContainerRef.current;
+    if (!container) return;
+
+    const resizeObserver = new ResizeObserver(() => {
+      // If user was at bottom before resize, scroll back to bottom
+      if (isAtBottomRef.current) {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'instant' });
+      }
+    });
+
+    resizeObserver.observe(container);
+    return () => resizeObserver.disconnect();
+  }, []);
 
   // Rotate through thinking phrases while loading
   useEffect(() => {
@@ -686,7 +724,7 @@ export function ChatPanel({ project, onVersionChange }: ChatPanelProps) {
       </div>
 
       {/* Messages area */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-black/[0.15]">
+      <div ref={messagesContainerRef} className="flex-1 overflow-y-auto p-4 space-y-4 bg-black/[0.15]">
         {messages.length === 0 && !isLoading && isHistoryLoaded ? (
           <div className="h-full flex items-center justify-center">
             <div className="text-center max-w-md">
