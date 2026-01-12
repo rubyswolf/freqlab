@@ -57,18 +57,27 @@ let reverb = reverb_stereo(room_size, decay, 0.8);
 let reverb = reverb_stereo(room_size as f64, decay as f64, 0.8);
 ```
 
+**fundsp tick() API - requires output buffer parameter:**
+```rust
+// WRONG - tick() does NOT return output
+let output = self.reverb.tick(&input); // ❌ Error!
+
+// CORRECT - tick() writes to an output buffer
+let mut output = [0.0f64; 2];
+self.reverb.tick(&[left as f64, right as f64], &mut output);
+let wet_left = output[0] as f32;
+let wet_right = output[1] as f32;
+```
+
 **Correct patterns:**
 ```rust
-// Generic function
-fn apply_effect<T: AudioUnit>(effect: &mut T, input: &[f32]) -> Vec<f32> { ... }
-
-// Boxed dynamic dispatch
-let effect: Box<dyn AudioUnit> = Box::new(reverb_stereo(20.0, 2.0, 1.0));
-
-// Store in struct
+// Store in struct - use Box<dyn AudioNode> for fundsp units
 struct MyPlugin {
-    effect: Box<dyn AudioUnit>,
+    reverb: Box<dyn AudioNode<Inputs = U2, Outputs = U2>>,
 }
+
+// Initialize in Default or initialize()
+reverb: Box::new(reverb_stereo(20.0, 2.0, 1.0)),
 ```
 
 **Correct approach - use a crate:**
@@ -402,6 +411,67 @@ for (channel_idx, channel) in buffer.as_slice().iter_mut().enumerate() {
         *sample = process_sample(*sample);
     }
 }
+```
+
+### Sidechain/Auxiliary Buffer Access
+```rust
+fn process(&mut self, buffer: &mut Buffer, aux: &mut AuxiliaryBuffers, ...) -> ProcessStatus {
+    // Access sidechain input (if configured in AUDIO_IO_LAYOUTS)
+    if let Some(sidechain) = aux.inputs.first() {
+        let sc_channels = sidechain.as_slice();  // Use as_slice(), NOT .get()
+        for (sample_idx, channel_samples) in buffer.iter_samples().enumerate() {
+            let sc_left = sc_channels.get(0).map(|c| c[sample_idx]).unwrap_or(0.0);
+            let sc_right = sc_channels.get(1).map(|c| c[sample_idx]).unwrap_or(sc_left);
+            // ... use sidechain signal
+        }
+    }
+    ProcessStatus::Normal
+}
+```
+**Note:** Buffer does NOT have a `.get()` method - use `.as_slice()` to get channel slices first.
+
+### Avoiding Double Mutable Borrow
+
+When processing stereo with sample index access, extract samples first to avoid borrow conflicts:
+
+```rust
+// WRONG - double mutable borrow
+for channel_samples in buffer.iter_samples() {
+    let left = channel_samples[0];   // borrows channel_samples
+    let right = channel_samples[1];  // borrows again - might conflict
+    channel_samples[0] = process(left);  // mutable borrow - ERROR!
+}
+
+// CORRECT - extract samples, then write back
+for mut channel_samples in buffer.iter_samples() {
+    let mut samples: [f32; 2] = [0.0; 2];
+    for (i, sample) in channel_samples.iter_mut().enumerate().take(2) {
+        samples[i] = *sample;
+    }
+
+    // Process
+    let (out_l, out_r) = process_stereo(samples[0], samples[1]);
+
+    // Write back
+    for (i, sample) in channel_samples.iter_mut().enumerate().take(2) {
+        *sample = if i == 0 { out_l } else { out_r };
+    }
+}
+```
+
+### f32::min/max Method Ambiguity
+
+When using `.min()` or `.max()` on f32, trait conflicts can occur:
+
+```rust
+// May cause "multiple applicable items" error
+let clamped = value.min(1.0).max(0.0);
+
+// CORRECT - use explicit function calls
+let clamped = f32::min(f32::max(value, 0.0), 1.0);
+
+// OR use clamp (cleaner)
+let clamped = value.clamp(0.0, 1.0);
 ```
 
 ## Getting Context Info

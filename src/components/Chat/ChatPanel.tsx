@@ -723,7 +723,7 @@ export function ChatPanel({ project, onVersionChange }: ChatPanelProps) {
       </div>
 
       {/* Messages area */}
-      <div ref={messagesContainerRef} className="flex-1 overflow-y-auto p-4 space-y-4 bg-black/[0.15]">
+      <div ref={messagesContainerRef} className="flex-1 overflow-y-auto p-4 bg-black/[0.15]">
         {messages.length === 0 && !isLoading && isHistoryLoaded ? (
           <div className="h-full flex items-center justify-center">
             <div className="text-center max-w-md">
@@ -744,7 +744,7 @@ export function ChatPanel({ project, onVersionChange }: ChatPanelProps) {
             </div>
           </div>
         ) : (
-          <>
+          <div className="min-h-full flex flex-col justify-end space-y-4">
             {messages.map((message) => {
               // Use memoized effectiveActiveVersion (calculated once, not per-message)
               // Determine if this version is "inactive" (ahead of current active version)
@@ -927,7 +927,7 @@ export function ChatPanel({ project, onVersionChange }: ChatPanelProps) {
               )
             )}
             <div ref={messagesEndRef} />
-          </>
+          </div>
         )}
       </div>
 
