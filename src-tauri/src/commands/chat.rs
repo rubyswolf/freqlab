@@ -162,13 +162,13 @@ pub async fn update_active_version(
 
 /// Get the current effective version for a project
 /// Returns activeVersion if set, otherwise max version from messages
-/// Returns 0 if no Claude commits exist (allows detection of first Claude commit)
+/// Returns 0 if no agent commits exist (allows detection of first agent commit)
 #[tauri::command]
 pub async fn get_current_version(project_path: String) -> Result<u32, String> {
     let chat_file = get_chat_file_path(&project_path);
 
     if !chat_file.exists() {
-        return Ok(0); // No chat = no Claude commits yet (version 0)
+        return Ok(0); // No chat = no agent commits yet (version 0)
     }
 
     let content = fs::read_to_string(&chat_file)
@@ -183,13 +183,13 @@ pub async fn get_current_version(project_path: String) -> Result<u32, String> {
     }
 
     // Otherwise, find the max version from messages
-    // Returns 0 if no versions found (no Claude commits yet)
+    // Returns 0 if no versions found (no agent commits yet)
     let max_version = history
         .messages
         .iter()
         .filter_map(|m| m.version)
         .max()
-        .unwrap_or(0); // No versions = no Claude commits yet
+        .unwrap_or(0); // No versions = no agent commits yet
 
     Ok(max_version)
 }

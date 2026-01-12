@@ -439,14 +439,17 @@ strip = "symbols"
         .map_err(|e| format!("Failed to write metadata.json: {}", e))?;
 
     // Generate CLAUDE.md for project-specific Claude guidance (uses display name for header)
+    // Also create AGENTS.md with same content for OpenCode compatibility
     let claude_md_content = super::claude_md::generate_claude_md(
         &display_name,
         &input.template,
         &input.ui_framework,
         input.components.as_ref(),
     );
-    fs::write(project_path.join("CLAUDE.md"), claude_md_content)
+    fs::write(project_path.join("CLAUDE.md"), claude_md_content.clone())
         .map_err(|e| format!("Failed to write CLAUDE.md: {}", e))?;
+    fs::write(project_path.join("AGENTS.md"), claude_md_content)
+        .map_err(|e| format!("Failed to write AGENTS.md: {}", e))?;
 
     // Generate .claude/commands/ with project-specific skills
     generate_project_skills(&project_path, &input.template, &input.ui_framework, input.components.as_ref())?;

@@ -1,10 +1,11 @@
 import { useState } from 'react'
 import { PrerequisitesCheck } from './PrerequisitesCheck'
+import { ProviderSelection } from './ProviderSelection'
 import { DawSetup } from './DawSetup'
 import { useSettingsStore } from '../../stores/settingsStore'
 import { useTourStore } from '../../stores/tourStore'
 
-type WizardStep = 'welcome' | 'prerequisites' | 'daw-setup' | 'complete'
+type WizardStep = 'welcome' | 'prerequisites' | 'provider-selection' | 'daw-setup' | 'complete'
 
 function WaveformIcon() {
     return (
@@ -146,18 +147,11 @@ export function WelcomeWizard() {
                             </div>
 
                             {/* Subscription notice */}
-                            <div className="px-3 py-2 rounded-lg bg-warning/10 border border-warning/20 text-center">
+                            <div className="px-3 py-2 rounded-lg bg-accent/10 border border-accent/20 text-center">
                                 <p className="text-xs text-text-secondary">
-                                    <span className="font-medium text-warning">Claude Pro or Max required</span>
+                                    <span className="font-medium text-accent">Requires a coding agent</span>
                                     {' - '}
-                                    <a
-                                        href="https://claude.ai/login"
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="text-accent hover:underline"
-                                    >
-                                        Login now
-                                    </a>
+                                    Claude Code or OpenCode supported
                                 </p>
                             </div>
 
@@ -171,10 +165,14 @@ export function WelcomeWizard() {
                         </div>
                     )}
 
-                    {step === 'prerequisites' && <PrerequisitesCheck onComplete={() => setStep('daw-setup')} />}
+                    {step === 'prerequisites' && <PrerequisitesCheck onComplete={() => setStep('provider-selection')} />}
+
+                    {step === 'provider-selection' && (
+                        <ProviderSelection onComplete={() => setStep('daw-setup')} onBack={() => setStep('prerequisites')} />
+                    )}
 
                     {step === 'daw-setup' && (
-                        <DawSetup onComplete={() => setStep('complete')} onBack={() => setStep('prerequisites')} />
+                        <DawSetup onComplete={() => setStep('complete')} onBack={() => setStep('provider-selection')} />
                     )}
 
                     {step === 'complete' && (
@@ -333,13 +331,13 @@ export function WelcomeWizard() {
 
                     {/* Step indicator */}
                     <div className="flex justify-center gap-2 mt-6">
-                        {['welcome', 'prerequisites', 'daw-setup', 'complete'].map((s, i) => (
+                        {['welcome', 'prerequisites', 'provider-selection', 'daw-setup', 'complete'].map((s, i) => (
                             <div
                                 key={s}
                                 className={`h-1.5 rounded-full transition-all duration-300 ${
                                     s === step
                                         ? 'w-6 bg-accent'
-                                        : i < ['welcome', 'prerequisites', 'daw-setup', 'complete'].indexOf(step)
+                                        : i < ['welcome', 'prerequisites', 'provider-selection', 'daw-setup', 'complete'].indexOf(step)
                                         ? 'w-1.5 bg-accent/50'
                                         : 'w-1.5 bg-border'
                                 }`}

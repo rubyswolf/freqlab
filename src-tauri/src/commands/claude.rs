@@ -1,4 +1,4 @@
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
@@ -10,16 +10,22 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 use tokio::time::timeout;
 
-// Track active Claude processes by project path so we can interrupt them
-static ACTIVE_PROCESSES: Mutex<Option<HashMap<String, u32>>> = Mutex::new(None);
+use super::agent_provider::{AgentProvider, AgentProviderType, AgentStreamEvent, ProviderCallConfig};
+use super::providers::claude_cli::ClaudeProvider;
+use super::providers::opencode::OpenCodeProvider;
 
-fn register_process(project_path: &str, pid: u32) {
+// Track active agent processes by project path so we can interrupt them
+// Key format: "project_path" (we interrupt all providers for a project when requested)
+// Value: (provider_type, pid) to know which provider is running
+static ACTIVE_PROCESSES: Mutex<Option<HashMap<String, (AgentProviderType, u32)>>> = Mutex::new(None);
+
+fn register_process(project_path: &str, provider: AgentProviderType, pid: u32) {
     let mut guard = ACTIVE_PROCESSES.lock().unwrap();
     if guard.is_none() {
         *guard = Some(HashMap::new());
     }
     if let Some(ref mut map) = *guard {
-        map.insert(project_path.to_string(), pid);
+        map.insert(project_path.to_string(), (provider, pid));
     }
 }
 
@@ -30,11 +36,16 @@ fn unregister_process(project_path: &str) {
     }
 }
 
-fn get_process_pid(project_path: &str) -> Option<u32> {
+fn get_process_info(project_path: &str) -> Option<(AgentProviderType, u32)> {
     let guard = ACTIVE_PROCESSES.lock().unwrap();
     guard.as_ref().and_then(|map| map.get(project_path).copied())
 }
 
+fn get_process_pid(project_path: &str) -> Option<u32> {
+    get_process_info(project_path).map(|(_, pid)| pid)
+}
+
+/// Response from Claude - kept for backwards compatibility with frontend
 #[derive(Serialize, Clone)]
 pub struct ClaudeResponse {
     pub content: String,
@@ -42,190 +53,52 @@ pub struct ClaudeResponse {
     pub commit_hash: Option<String>,
 }
 
-#[derive(Serialize, Clone)]
-#[serde(tag = "type")]
-pub enum ClaudeStreamEvent {
-    #[serde(rename = "start")]
-    Start { project_path: String },
-    #[serde(rename = "text")]
-    Text { project_path: String, content: String },
-    #[serde(rename = "error")]
-    Error { project_path: String, message: String },
-    #[serde(rename = "done")]
-    Done { project_path: String, content: String },
-}
-
-/// Represents a parsed event from Claude CLI stream-json output
-#[derive(Deserialize, Debug)]
-struct ClaudeJsonEvent {
-    #[serde(rename = "type")]
-    event_type: String,
-    #[serde(default)]
-    message: Option<ClaudeMessage>,
-    #[serde(default)]
-    tool: Option<String>,
-    #[serde(default)]
-    tool_input: Option<serde_json::Value>,
-    #[serde(default)]
-    content: Option<String>,
-    #[serde(default)]
-    session_id: Option<String>,
-}
-
-#[derive(Deserialize, Debug, Default)]
-struct ClaudeMessage {
-    #[serde(default)]
-    content: Option<serde_json::Value>,
-}
-
-/// Get the session file path for a project
+/// Get the session file path for a project (default: Claude)
 fn get_session_file(project_path: &str) -> PathBuf {
+    get_session_file_for_provider(project_path, &AgentProviderType::Claude)
+}
+
+/// Get the session file path for a specific provider
+fn get_session_file_for_provider(project_path: &str, provider: &AgentProviderType) -> PathBuf {
+    let filename = match provider {
+        AgentProviderType::Claude => "claude_session.txt",
+        AgentProviderType::OpenCode => "opencode_session.txt",
+    };
     PathBuf::from(project_path)
         .join(".vstworkshop")
-        .join("claude_session.txt")
+        .join(filename)
 }
 
 /// Load session ID for a project (if exists)
 fn load_session_id(project_path: &str) -> Option<String> {
-    let session_file = get_session_file(project_path);
-    fs::read_to_string(session_file).ok().map(|s| s.trim().to_string())
+    load_session_id_for_provider(project_path, &AgentProviderType::Claude)
+}
+
+/// Load session ID for a specific provider
+fn load_session_id_for_provider(project_path: &str, provider: &AgentProviderType) -> Option<String> {
+    let session_file = get_session_file_for_provider(project_path, provider);
+    fs::read_to_string(session_file)
+        .ok()
+        .map(|s| s.trim().to_string())
 }
 
 /// Save session ID for a project
 fn save_session_id(project_path: &str, session_id: &str) -> Result<(), String> {
-    let session_file = get_session_file(project_path);
+    save_session_id_for_provider(project_path, session_id, &AgentProviderType::Claude)
+}
+
+/// Save session ID for a specific provider
+fn save_session_id_for_provider(project_path: &str, session_id: &str, provider: &AgentProviderType) -> Result<(), String> {
+    let session_file = get_session_file_for_provider(project_path, provider);
     fs::write(&session_file, session_id)
         .map_err(|e| format!("Failed to save session ID: {}", e))
 }
 
-/// Extract session_id from a JSON event if present
-fn extract_session_id(json_str: &str) -> Option<String> {
-    let event: ClaudeJsonEvent = serde_json::from_str(json_str).ok()?;
-    event.session_id
-}
-
-/// Result of parsing a Claude JSON event
-struct ParsedEvent {
-    /// Human-readable text to display during streaming
-    display_text: Option<String>,
-    /// If this is an assistant message, the full text content (for final message extraction)
-    assistant_content: Option<String>,
-}
-
-/// Parse a JSON event and return display text and assistant content
-fn parse_claude_event(json_str: &str) -> ParsedEvent {
-    let event: ClaudeJsonEvent = match serde_json::from_str(json_str) {
-        Ok(e) => e,
-        Err(_) => return ParsedEvent { display_text: None, assistant_content: None },
-    };
-
-    match event.event_type.as_str() {
-        "assistant" => {
-            // Extract text content from assistant message
-            if let Some(msg) = &event.message {
-                if let Some(content) = &msg.content {
-                    // Content can be a string or array of content blocks
-                    let text = if let Some(text) = content.as_str() {
-                        Some(text.to_string())
-                    } else if let Some(arr) = content.as_array() {
-                        let texts: Vec<String> = arr
-                            .iter()
-                            .filter_map(|item| {
-                                if item.get("type")?.as_str()? == "text" {
-                                    item.get("text")?.as_str().map(|s| s.to_string())
-                                } else {
-                                    None
-                                }
-                            })
-                            .collect();
-                        if !texts.is_empty() {
-                            Some(texts.join("\n"))
-                        } else {
-                            None
-                        }
-                    } else {
-                        None
-                    };
-
-                    return ParsedEvent {
-                        display_text: text.clone(),
-                        assistant_content: text,
-                    };
-                }
-            }
-            ParsedEvent { display_text: None, assistant_content: None }
-        }
-        "tool_use" => {
-            let tool = event.tool.as_deref().unwrap_or("unknown");
-            let display = match tool {
-                "Read" => {
-                    if let Some(input) = &event.tool_input {
-                        let file = input.get("file_path")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("file");
-                        format!("📖 Reading: {}", file)
-                    } else {
-                        "📖 Reading file...".to_string()
-                    }
-                }
-                "Edit" => {
-                    if let Some(input) = &event.tool_input {
-                        let file = input.get("file_path")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("file");
-                        format!("✏️  Editing: {}", file)
-                    } else {
-                        "✏️  Editing file...".to_string()
-                    }
-                }
-                "Write" => {
-                    if let Some(input) = &event.tool_input {
-                        let file = input.get("file_path")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("file");
-                        format!("📝 Writing: {}", file)
-                    } else {
-                        "📝 Writing file...".to_string()
-                    }
-                }
-                "Bash" => {
-                    if let Some(input) = &event.tool_input {
-                        let cmd = input.get("command")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("command");
-                        // Truncate long commands
-                        let display_cmd = if cmd.len() > 60 {
-                            format!("{}...", &cmd[..60])
-                        } else {
-                            cmd.to_string()
-                        };
-                        format!("💻 Running: {}", display_cmd)
-                    } else {
-                        "💻 Running command...".to_string()
-                    }
-                }
-                _ => format!("🔧 Using tool: {}", tool),
-            };
-            ParsedEvent { display_text: Some(display), assistant_content: None }
-        }
-        "tool_result" => {
-            // Tool completed - could show result summary
-            ParsedEvent { display_text: Some("   ✓ Done".to_string()), assistant_content: None }
-        }
-        "result" => {
-            // Final result - skip display as it duplicates the assistant message content
-            // The "assistant" event already captures the response text
-            ParsedEvent { display_text: None, assistant_content: None }
-        }
-        "error" => {
-            let display = if let Some(content) = &event.content {
-                format!("❌ Error: {}", content)
-            } else {
-                "❌ An error occurred".to_string()
-            };
-            ParsedEvent { display_text: Some(display), assistant_content: None }
-        }
-        _ => ParsedEvent { display_text: None, assistant_content: None },
+/// Get a boxed provider instance based on type
+fn get_provider(provider_type: &AgentProviderType) -> Box<dyn AgentProvider> {
+    match provider_type {
+        AgentProviderType::Claude => Box::new(ClaudeProvider),
+        AgentProviderType::OpenCode => Box::new(OpenCodeProvider),
     }
 }
 
@@ -300,7 +173,8 @@ fn build_context(
             context.push_str("1. Add the parameter in lib.rs\n");
             context.push_str("2. **ALSO add a UI control in ui.html** (slider, knob, button, etc.)\n");
             context.push_str("3. Connect the UI control via IPC messages\n\n");
-            context.push_str("A plugin with no UI controls is BROKEN. Always update both lib.rs AND ui.html.\n\n");
+            context
+                .push_str("A plugin with no UI controls is BROKEN. Always update both lib.rs AND ui.html.\n\n");
             context.push_str("---\n\n");
         }
     }
@@ -316,7 +190,8 @@ Description: {description}
         description = description,
     ));
 
-    context.push_str(r#"
+    context.push_str(
+        r#"
 
 ## 1. NEVER SAY "BUILD"
 The app has a Build button. Using "build" confuses users into thinking you're doing their build.
@@ -362,9 +237,11 @@ Before implementing ANY audio feature, you MUST check if a relevant skill exists
 
 ---
 
-"#);
+"#,
+    );
 
-    context.push_str(&format!(r#"## nih-plug Documentation
+    context.push_str(&format!(
+        r#"## nih-plug Documentation
 
 A local clone of the nih-plug repository is available at: {}
 - Use Grep/Read to search the repo for API examples and syntax
@@ -384,8 +261,7 @@ When the user requests a feature:
 5. Briefly summarize what you added (feature terms, not code terms)
 
 The user will describe what they want. Make the changes directly to the code."#,
-        docs_path_str,
-        NIH_PLUG_REFERENCE
+        docs_path_str, NIH_PLUG_REFERENCE
     ));
 
     // Append project-specific CLAUDE.md guidelines if present
@@ -426,7 +302,6 @@ pub async fn send_to_claude(
     }
 
     // Ensure .vstworkshop/ is not tracked by git (fixes existing projects)
-    // This prevents chat.json from being reverted when doing git checkout
     if let Err(e) = super::git::ensure_vstworkshop_ignored(&project_path) {
         eprintln!("[WARN] Failed to update gitignore: {}", e);
     }
@@ -437,101 +312,48 @@ pub async fn send_to_claude(
 
     // Load project metadata to get components and UI framework
     let metadata = load_project_metadata(&project_path);
-    let components = metadata.as_ref().and_then(|m| m.components.as_ref());
-    let ui_framework = metadata.as_ref().and_then(|m| m.ui_framework.as_deref());
+    let components = metadata.as_ref().and_then(|m| m.components.clone());
+    let ui_framework = metadata.as_ref().and_then(|m| m.ui_framework.clone());
 
-    // Build context with components info and project-specific CLAUDE.md
-    let context = build_context(&project_name, &description, &project_path, components, is_first_message, ui_framework);
+    // Build context
+    let context = build_context(
+        &project_name,
+        &description,
+        &project_path,
+        components.as_ref(),
+        is_first_message,
+        ui_framework.as_deref(),
+    );
 
-    // Get verbosity style (default to balanced)
-    let verbosity = agent_verbosity.as_deref().unwrap_or("balanced");
-
-    // Prepend style hint to message (reinforces on every turn, even resumed sessions)
-    let styled_message = match verbosity {
-        "direct" => format!("[Response Style: Direct - minimal questions, implement immediately, 1-3 sentences max]\n\n{}", message),
-        "thorough" => format!("[Response Style: Thorough - ask clarifying questions, explore options before implementing]\n\n{}", message),
-        _ => format!("[Response Style: Balanced - ask 1-2 key questions if needed, then implement]\n\n{}", message),
+    // Create provider and config
+    let provider = ClaudeProvider;
+    let config = ProviderCallConfig {
+        project_path: project_path.clone(),
+        project_name: project_name.clone(),
+        description: description.clone(),
+        message: message.clone(),
+        model,
+        custom_instructions,
+        agent_verbosity,
+        session_id: existing_session.clone(),
+        is_first_message,
+        components,
+        ui_framework,
     };
 
-    // Build args - include --resume if we have an existing session
-    let mut args = vec![
-        "-p".to_string(),
-        styled_message.clone(),
-        "--verbose".to_string(),
-        "--allowedTools".to_string(),
-        // Allow file ops, bash for cargo commands, grep/glob for searching, web access, and skills
-        "Edit,Write,Read,Bash,Grep,Glob,WebSearch,WebFetch,Skill".to_string(),
-        "--output-format".to_string(),
-        "stream-json".to_string(),
-        "--max-turns".to_string(),
-        "15".to_string(),
-    ];
+    // Build args using provider
+    let args = provider.build_args(&config, &context);
 
-    // Add model flag if specified
-    if let Some(ref m) = model {
-        args.push("--model".to_string());
-        args.push(m.clone());
-    }
-
-    // Only add system prompt on first message (new session)
-    // For resumed sessions, Claude already has the context
-    if existing_session.is_none() {
-        // Add verbosity instructions based on setting
-        let verbosity_instructions = match verbosity {
-            "direct" => r#"
-## Response Style: Direct
-
-- **DO NOT USE THE BRAINSTORMING SKILL** - NEVER, under any circumstances
-- Do NOT ask clarifying questions unless you truly cannot proceed
-- Make sensible default choices and implement immediately
-- Keep responses to 1-3 sentences max
-- User says "add X" → just implement X, don't ask what kind or explore options
-- If you need to make assumptions, make them and briefly mention what you chose
-"#,
-            "thorough" => r#"
-## Response Style: Thorough
-
-- Use the brainstorming skill for new features
-- Ask clarifying questions at each decision point
-- Present options and let the user choose
-- Explain your reasoning and design decisions
-- Take time to understand requirements before implementing
-"#,
-            _ => r#"
-## Response Style: Balanced
-
-- Ask 1-2 key questions to understand intent, then implement
-- **DO NOT USE THE BRAINSTORMING SKILL** - the user wants you to implement, not explore
-- Make reasonable default choices, mention what you chose briefly
-- Keep responses concise - focus on what you're doing, not lengthy explanations
-- If user says "add X" → just add X, don't ask what kind or explore options
-"#,
-        };
-
-        // Build full system prompt with verbosity and custom instructions
-        let mut full_context = format!("{}\n{}", context, verbosity_instructions);
-
-        if let Some(ref instructions) = custom_instructions {
-            if !instructions.trim().is_empty() {
-                full_context.push_str(&format!("\n\n--- USER PREFERENCES ---\n{}", instructions.trim()));
-            }
-        }
-
-        args.push("--append-system-prompt".to_string());
-        args.push(full_context);
-    }
-
-    // Add resume flag if we have an existing session
-    if let Some(ref session_id) = existing_session {
-        args.push("--resume".to_string());
-        args.push(session_id.clone());
-        eprintln!("[DEBUG] Resuming Claude session: {}", session_id);
+    if existing_session.is_some() {
+        eprintln!(
+            "[DEBUG] Resuming Claude session: {}",
+            existing_session.as_ref().unwrap()
+        );
     } else {
         eprintln!("[DEBUG] Starting new Claude session");
     }
 
-    // Spawn Claude CLI process with stream-json for detailed output
-    // stdin is set to null to prevent any blocking on input
+    // Spawn Claude CLI process
     let mut child = Command::new("claude")
         .current_dir(&project_path)
         .args(&args)
@@ -542,25 +364,21 @@ pub async fn send_to_claude(
         .spawn()
         .map_err(|e| format!("Failed to spawn Claude CLI: {}", e))?;
 
-    // Register process for potential interruption
+    // Register process for potential interruption (legacy send_to_claude uses Claude provider)
     if let Some(pid) = child.id() {
-        register_process(&project_path, pid);
+        register_process(&project_path, AgentProviderType::Claude, pid);
     }
 
     // Emit start event
-    let _ = window.emit("claude-stream", ClaudeStreamEvent::Start {
-        project_path: project_path.clone()
-    });
+    let _ = window.emit(
+        "agent-stream",
+        AgentStreamEvent::Start {
+            project_path: project_path.clone(),
+        },
+    );
 
-    let stdout = child
-        .stdout
-        .take()
-        .ok_or("Failed to capture stdout")?;
-
-    let stderr = child
-        .stderr
-        .take()
-        .ok_or("Failed to capture stderr")?;
+    let stdout = child.stdout.take().ok_or("Failed to capture stdout")?;
+    let stderr = child.stderr.take().ok_or("Failed to capture stderr")?;
 
     let mut stdout_reader = BufReader::new(stdout).lines();
     let mut stderr_reader = BufReader::new(stderr).lines();
@@ -568,16 +386,12 @@ pub async fn send_to_claude(
     let mut full_output = String::new();
     let mut error_output = String::new();
     let mut captured_session_id: Option<String> = None;
-    // Track assistant messages for final content extraction
-    // We prefer the last substantial message, but fall back to last non-empty if needed
-    let mut last_substantial_content: Option<String> = None;  // >10 chars, likely a real response
-    let mut last_nonempty_content: Option<String> = None;     // Fallback for short but valid responses
+    let mut last_substantial_content: Option<String> = None;
+    let mut last_nonempty_content: Option<String> = None;
 
-    // Timeout settings: if no output for 15 minutes, consider it potentially stalled
-    // This is a safety net for completely hung processes - the frontend has its own 30-min timeout
     let read_timeout = Duration::from_secs(900); // 15 minutes
     let mut consecutive_timeouts = 0;
-    let max_consecutive_timeouts = 2; // Kill after 30 minutes of no output
+    let max_consecutive_timeouts = 2;
 
     // Read stdout and stderr concurrently with timeout protection
     loop {
@@ -586,89 +400,103 @@ pub async fn send_to_claude(
                 line = stdout_reader.next_line() => ("stdout", line),
                 line = stderr_reader.next_line() => ("stderr", line),
             }
-        }).await;
+        })
+        .await;
 
         match read_result {
             Ok(("stdout", line)) => {
-                consecutive_timeouts = 0; // Reset on any output
+                consecutive_timeouts = 0;
                 match line {
                     Ok(Some(json_line)) => {
                         // Try to extract session_id if present
-                        if let Some(sid) = extract_session_id(&json_line) {
+                        if let Some(sid) = provider.extract_session_id(&json_line) {
                             captured_session_id = Some(sid);
                         }
 
-                        // Try to parse as JSON event for display
-                        let parsed = parse_claude_event(&json_line);
+                        // Parse using provider
+                        let parsed = provider.parse_stream_line(&json_line, &project_path);
 
                         // Track assistant messages for final content extraction
                         if let Some(ref content) = parsed.assistant_content {
                             let trimmed = content.trim();
                             if !trimmed.is_empty() {
-                                // Always track the last non-empty message as fallback
                                 last_nonempty_content = Some(content.clone());
-                                // Track substantial messages (>10 chars) as preferred final content
                                 if trimmed.len() > 10 {
                                     last_substantial_content = Some(content.clone());
                                 }
                             }
                         }
 
-                        // Display text during streaming (includes all thinking + tool use)
+                        // Display text during streaming
                         if let Some(display_text) = parsed.display_text {
                             full_output.push_str(&display_text);
                             full_output.push('\n');
-                            let _ = window.emit("claude-stream", ClaudeStreamEvent::Text {
-                                project_path: project_path.clone(),
-                                content: display_text,
-                            });
+                            let _ = window.emit(
+                                "agent-stream",
+                                AgentStreamEvent::Text {
+                                    project_path: project_path.clone(),
+                                    content: display_text,
+                                },
+                            );
                         }
                     }
                     Ok(None) => break,
                     Err(e) => {
-                        let _ = window.emit("claude-stream", ClaudeStreamEvent::Error {
-                            project_path: project_path.clone(),
-                            message: e.to_string(),
-                        });
+                        let _ = window.emit(
+                            "agent-stream",
+                            AgentStreamEvent::Error {
+                                project_path: project_path.clone(),
+                                message: e.to_string(),
+                            },
+                        );
                         break;
                     }
                 }
             }
             Ok(("stderr", line)) => {
-                consecutive_timeouts = 0; // Reset on any output
+                consecutive_timeouts = 0;
                 match line {
                     Ok(Some(text)) => {
                         error_output.push_str(&text);
                         error_output.push('\n');
-                        // Also emit stderr as it may contain useful info
-                        let _ = window.emit("claude-stream", ClaudeStreamEvent::Text {
-                            project_path: project_path.clone(),
-                            content: format!("[stderr] {}", text),
-                        });
+                        let _ = window.emit(
+                            "agent-stream",
+                            AgentStreamEvent::Text {
+                                project_path: project_path.clone(),
+                                content: format!("[stderr] {}", text),
+                            },
+                        );
                     }
                     Ok(None) => {}
                     Err(_) => {}
                 }
             }
-            Ok(_) => {} // Shouldn't happen
+            Ok(_) => {}
             Err(_) => {
-                // Timeout occurred - no output for read_timeout duration
                 consecutive_timeouts += 1;
                 let timeout_mins = read_timeout.as_secs() / 60;
-                eprintln!("[WARN] Claude CLI read timeout ({}/{})", consecutive_timeouts, max_consecutive_timeouts);
+                eprintln!(
+                    "[WARN] Claude CLI read timeout ({}/{})",
+                    consecutive_timeouts, max_consecutive_timeouts
+                );
 
-                let _ = window.emit("claude-stream", ClaudeStreamEvent::Text {
-                    project_path: project_path.clone(),
-                    content: format!("[Warning] No output for {} minutes...", timeout_mins),
-                });
+                let _ = window.emit(
+                    "agent-stream",
+                    AgentStreamEvent::Text {
+                        project_path: project_path.clone(),
+                        content: format!("[Warning] No output for {} minutes...", timeout_mins),
+                    },
+                );
 
                 if consecutive_timeouts >= max_consecutive_timeouts {
                     eprintln!("[ERROR] Claude CLI appears stalled, terminating process");
-                    let _ = window.emit("claude-stream", ClaudeStreamEvent::Error {
-                        project_path: project_path.clone(),
-                        message: "Claude CLI stalled (no output for 30 minutes). Session terminated.".to_string(),
-                    });
-                    // Kill the process
+                    let _ = window.emit(
+                        "agent-stream",
+                        AgentStreamEvent::Error {
+                            project_path: project_path.clone(),
+                            message: "Claude CLI stalled (no output for 30 minutes). Session terminated.".to_string(),
+                        },
+                    );
                     let _ = child.kill().await;
                     break;
                 }
@@ -682,31 +510,30 @@ pub async fn send_to_claude(
         .await
         .map_err(|e| format!("Failed to wait for Claude CLI: {}", e))?;
 
-    // Check if process was already unregistered (indicates it was interrupted)
     let was_interrupted = get_process_pid(&project_path).is_none();
-
-    // Unregister process now that it's complete (no-op if already unregistered by interrupt)
     unregister_process(&project_path);
 
     // Handle non-success exit
     if !status.success() {
         if !error_output.is_empty() {
-            // Process failed with error output
-            let _ = window.emit("claude-stream", ClaudeStreamEvent::Error {
-                project_path: project_path.clone(),
-                message: error_output.clone(),
-            });
+            let _ = window.emit(
+                "agent-stream",
+                AgentStreamEvent::Error {
+                    project_path: project_path.clone(),
+                    message: error_output.clone(),
+                },
+            );
             return Err(format!("Claude CLI failed: {}", error_output));
         } else if was_interrupted {
-            // Process was killed by user interrupt - don't emit another error (interrupt_claude already did)
-            // Just return an error to prevent adding partial response as a message
             return Err("Session interrupted".to_string());
         } else {
-            // Process failed without error output (unexpected termination)
-            let _ = window.emit("claude-stream", ClaudeStreamEvent::Error {
-                project_path: project_path.clone(),
-                message: "Claude CLI terminated unexpectedly".to_string(),
-            });
+            let _ = window.emit(
+                "agent-stream",
+                AgentStreamEvent::Error {
+                    project_path: project_path.clone(),
+                    message: "Claude CLI terminated unexpectedly".to_string(),
+                },
+            );
             return Err("Claude CLI terminated unexpectedly".to_string());
         }
     }
@@ -714,59 +541,52 @@ pub async fn send_to_claude(
     // Helper to check if text looks like a "done" message
     let is_done_like = |text: &str| -> bool {
         let trimmed = text.trim().to_lowercase();
-        trimmed.len() <= 15 && (
-            trimmed == "done" ||
-            trimmed == "done!" ||
-            trimmed == "done." ||
-            trimmed == "finished" ||
-            trimmed == "finished!" ||
-            trimmed == "complete" ||
-            trimmed == "complete!" ||
-            trimmed.starts_with("all done") ||
-            trimmed.starts_with("that's it") ||
-            trimmed.starts_with("thats it") ||
-            trimmed.contains("✓ done") ||
-            trimmed.contains("✓done") ||
-            // Catch variations like "Done!", "I'm done", etc.
-            (trimmed.len() < 15 && trimmed.contains("done"))
-        )
+        trimmed.len() <= 15
+            && (trimmed == "done"
+                || trimmed == "done!"
+                || trimmed == "done."
+                || trimmed == "finished"
+                || trimmed == "finished!"
+                || trimmed == "complete"
+                || trimmed == "complete!"
+                || trimmed.starts_with("all done")
+                || trimmed.starts_with("that's it")
+                || trimmed.starts_with("thats it")
+                || trimmed.contains("✓ done")
+                || trimmed.contains("✓done")
+                || (trimmed.len() < 15 && trimmed.contains("done")))
     };
 
-    // Check if streaming output ends with a "done" indicator (from tool_result events)
     let streaming_ends_with_done = full_output
         .lines()
         .last()
         .map(|line| is_done_like(line))
         .unwrap_or(false);
 
-    // Use the last assistant message as the final content (instead of all streaming output)
-    // This gives the user a clean summary rather than all the thinking
     let final_content = if streaming_ends_with_done {
-        // Streaming ended with "done" - use friendly response
         "All done! What would you like to do next?".to_string()
     } else if let Some(ref last) = last_nonempty_content {
         if is_done_like(last) {
-            // Last assistant message was just "done" - use friendly response
             "All done! What would you like to do next?".to_string()
         } else if last.trim().len() > 10 {
-            // Last message is substantial, use it
             last.clone()
         } else {
-            // Last message is short but not "done", try substantial or use it
             last_substantial_content.unwrap_or_else(|| last.clone())
         }
     } else {
-        // No assistant messages at all, use streaming output as fallback
         full_output.clone()
     };
 
     // Emit done event
-    let _ = window.emit("claude-stream", ClaudeStreamEvent::Done {
-        project_path: project_path.clone(),
-        content: final_content.clone(),
-    });
+    let _ = window.emit(
+        "agent-stream",
+        AgentStreamEvent::Done {
+            project_path: project_path.clone(),
+            content: final_content.clone(),
+        },
+    );
 
-    // Save session ID for next conversation (if we got one)
+    // Save session ID for next conversation
     if let Some(ref sid) = captured_session_id {
         if let Err(e) = save_session_id(&project_path, sid) {
             eprintln!("[WARN] Failed to save session ID: {}", e);
@@ -775,13 +595,15 @@ pub async fn send_to_claude(
         }
     }
 
-    // Commit changes after Claude finishes (truncate message for commit)
+    // Commit changes after Claude finishes
     let commit_msg = if message.len() > 50 {
         format!("{}...", &message[..47])
     } else {
         message.clone()
     };
-    let commit_hash = super::git::commit_changes(&project_path, &commit_msg).await.ok();
+    let commit_hash = super::git::commit_changes(&project_path, &commit_msg)
+        .await
+        .ok();
 
     Ok(ClaudeResponse {
         content: final_content,
@@ -808,13 +630,21 @@ pub async fn test_claude_cli() -> Result<String, String> {
     }
 }
 
-/// Interrupt a running Claude session for a specific project
+/// Interrupt a running agent session for a specific project
+/// Works with any provider (Claude, OpenCode, etc.)
 #[tauri::command]
-pub async fn interrupt_claude(project_path: String, window: tauri::Window) -> Result<(), String> {
-    if let Some(pid) = get_process_pid(&project_path) {
-        eprintln!("[DEBUG] Interrupting Claude process {} for {}", pid, project_path);
+pub async fn interrupt_agent(project_path: String, window: tauri::Window) -> Result<(), String> {
+    if let Some((provider_type, pid)) = get_process_info(&project_path) {
+        let provider_name = match provider_type {
+            AgentProviderType::Claude => "Claude",
+            AgentProviderType::OpenCode => "OpenCode",
+        };
 
-        // Send SIGTERM to the process (graceful termination)
+        eprintln!(
+            "[DEBUG] Interrupting {} process {} for {}",
+            provider_name, pid, project_path
+        );
+
         #[cfg(unix)]
         {
             use std::process::Command as StdCommand;
@@ -831,17 +661,363 @@ pub async fn interrupt_claude(project_path: String, window: tauri::Window) -> Re
                 .output();
         }
 
-        // Unregister the process
         unregister_process(&project_path);
 
-        // Emit a text event (not error) so the frontend shows a friendly message
-        let _ = window.emit("claude-stream", ClaudeStreamEvent::Text {
-            project_path: project_path.clone(),
-            content: "Session stopped. Ready for your next message.".to_string(),
-        });
+        let _ = window.emit(
+            "agent-stream",
+            AgentStreamEvent::Text {
+                project_path: project_path.clone(),
+                content: "Session stopped. Ready for your next message.".to_string(),
+            },
+        );
 
         Ok(())
     } else {
-        Err("No active Claude session for this project".to_string())
+        Err("No active agent session for this project".to_string())
     }
+}
+
+// ============================================================================
+// Unified Agent Command - Works with any provider
+// ============================================================================
+
+/// Unified command to send messages to any AI agent provider
+///
+/// This command dispatches to the configured provider (Claude, OpenCode, etc.)
+/// and handles streaming output, session management, and git commits.
+#[tauri::command]
+pub async fn send_to_agent(
+    provider_type: Option<AgentProviderType>,
+    project_path: String,
+    project_name: String,
+    description: String,
+    message: String,
+    model: Option<String>,
+    custom_instructions: Option<String>,
+    agent_verbosity: Option<String>,
+    window: tauri::Window,
+) -> Result<ClaudeResponse, String> {
+    // Default to Claude if no provider specified
+    let provider_type = provider_type.unwrap_or_default();
+    let provider = get_provider(&provider_type);
+
+    // Ensure git is initialized for this project (handles existing projects)
+    if !super::git::is_git_repo(&project_path) {
+        super::git::init_repo(&project_path).await?;
+        super::git::create_gitignore(&project_path)?;
+        super::git::commit_changes(&project_path, "Initialize git for version control").await?;
+    }
+
+    // Ensure .vstworkshop/ is not tracked by git (fixes existing projects)
+    if let Err(e) = super::git::ensure_vstworkshop_ignored(&project_path) {
+        eprintln!("[WARN] Failed to update gitignore: {}", e);
+    }
+
+    // Check for existing session to resume (provider-specific)
+    let existing_session = load_session_id_for_provider(&project_path, &provider_type);
+    let is_first_message = existing_session.is_none();
+
+    // Load project metadata to get components and UI framework
+    let metadata = load_project_metadata(&project_path);
+    let components = metadata.as_ref().and_then(|m| m.components.clone());
+    let ui_framework = metadata.as_ref().and_then(|m| m.ui_framework.clone());
+
+    // Build context
+    let context = build_context(
+        &project_name,
+        &description,
+        &project_path,
+        components.as_ref(),
+        is_first_message,
+        ui_framework.as_deref(),
+    );
+
+    // Create provider config
+    let config = ProviderCallConfig {
+        project_path: project_path.clone(),
+        project_name: project_name.clone(),
+        description: description.clone(),
+        message: message.clone(),
+        model,
+        custom_instructions,
+        agent_verbosity,
+        session_id: existing_session.clone(),
+        is_first_message,
+        components,
+        ui_framework,
+    };
+
+    // Build args using provider
+    let args = provider.build_args(&config, &context);
+
+    let cli_binary = provider_type.cli_binary();
+    let provider_name = provider_type.display_name();
+
+    if existing_session.is_some() {
+        eprintln!(
+            "[DEBUG] Resuming {} session: {}",
+            provider_name,
+            existing_session.as_ref().unwrap()
+        );
+    } else {
+        eprintln!("[DEBUG] Starting new {} session", provider_name);
+    }
+
+    // Spawn CLI process
+    let mut child = Command::new(cli_binary)
+        .current_dir(&project_path)
+        .args(&args)
+        .env("PATH", super::get_extended_path())
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("Failed to spawn {} CLI: {}", provider_name, e))?;
+
+    // Register process for potential interruption (with provider type for accurate tracking)
+    if let Some(pid) = child.id() {
+        register_process(&project_path, provider_type, pid);
+    }
+
+    // Emit start event (use same event name for frontend compatibility)
+    let _ = window.emit(
+        "agent-stream",
+        AgentStreamEvent::Start {
+            project_path: project_path.clone(),
+        },
+    );
+
+    let stdout = child.stdout.take().ok_or("Failed to capture stdout")?;
+    let stderr = child.stderr.take().ok_or("Failed to capture stderr")?;
+
+    let mut stdout_reader = BufReader::new(stdout).lines();
+    let mut stderr_reader = BufReader::new(stderr).lines();
+
+    let mut full_output = String::new();
+    let mut error_output = String::new();
+    let mut captured_session_id: Option<String> = None;
+    let mut last_substantial_content: Option<String> = None;
+    let mut last_nonempty_content: Option<String> = None;
+
+    let read_timeout = Duration::from_secs(900); // 15 minutes
+    let mut consecutive_timeouts = 0;
+    let max_consecutive_timeouts = 2;
+
+    // Read stdout and stderr concurrently with timeout protection
+    loop {
+        let read_result = timeout(read_timeout, async {
+            tokio::select! {
+                line = stdout_reader.next_line() => ("stdout", line),
+                line = stderr_reader.next_line() => ("stderr", line),
+            }
+        })
+        .await;
+
+        match read_result {
+            Ok(("stdout", line)) => {
+                consecutive_timeouts = 0;
+                match line {
+                    Ok(Some(json_line)) => {
+                        // Try to extract session_id if present
+                        if let Some(sid) = provider.extract_session_id(&json_line) {
+                            captured_session_id = Some(sid);
+                        }
+
+                        // Parse using provider
+                        let parsed = provider.parse_stream_line(&json_line, &project_path);
+
+                        // Track assistant messages for final content extraction
+                        if let Some(ref content) = parsed.assistant_content {
+                            let trimmed = content.trim();
+                            if !trimmed.is_empty() {
+                                last_nonempty_content = Some(content.clone());
+                                if trimmed.len() > 10 {
+                                    last_substantial_content = Some(content.clone());
+                                }
+                            }
+                        }
+
+                        // Display text during streaming
+                        if let Some(display_text) = parsed.display_text {
+                            full_output.push_str(&display_text);
+                            full_output.push('\n');
+                            let _ = window.emit(
+                                "agent-stream",
+                                AgentStreamEvent::Text {
+                                    project_path: project_path.clone(),
+                                    content: display_text,
+                                },
+                            );
+                        }
+                    }
+                    Ok(None) => break,
+                    Err(e) => {
+                        let _ = window.emit(
+                            "agent-stream",
+                            AgentStreamEvent::Error {
+                                project_path: project_path.clone(),
+                                message: e.to_string(),
+                            },
+                        );
+                        break;
+                    }
+                }
+            }
+            Ok(("stderr", line)) => {
+                consecutive_timeouts = 0;
+                match line {
+                    Ok(Some(text)) => {
+                        error_output.push_str(&text);
+                        error_output.push('\n');
+                        let _ = window.emit(
+                            "agent-stream",
+                            AgentStreamEvent::Text {
+                                project_path: project_path.clone(),
+                                content: format!("[stderr] {}", text),
+                            },
+                        );
+                    }
+                    Ok(None) => {}
+                    Err(_) => {}
+                }
+            }
+            Ok(_) => {}
+            Err(_) => {
+                consecutive_timeouts += 1;
+                let timeout_mins = read_timeout.as_secs() / 60;
+                eprintln!(
+                    "[WARN] {} CLI read timeout ({}/{})",
+                    provider_name, consecutive_timeouts, max_consecutive_timeouts
+                );
+
+                let _ = window.emit(
+                    "agent-stream",
+                    AgentStreamEvent::Text {
+                        project_path: project_path.clone(),
+                        content: format!("[Warning] No output for {} minutes...", timeout_mins),
+                    },
+                );
+
+                if consecutive_timeouts >= max_consecutive_timeouts {
+                    eprintln!("[ERROR] {} CLI appears stalled, terminating process", provider_name);
+                    let _ = window.emit(
+                        "agent-stream",
+                        AgentStreamEvent::Error {
+                            project_path: project_path.clone(),
+                            message: format!("{} CLI stalled (no output for 30 minutes). Session terminated.", provider_name),
+                        },
+                    );
+                    let _ = child.kill().await;
+                    break;
+                }
+            }
+        }
+    }
+
+    // Wait for process to complete
+    let status = child
+        .wait()
+        .await
+        .map_err(|e| format!("Failed to wait for {} CLI: {}", provider_name, e))?;
+
+    let was_interrupted = get_process_pid(&project_path).is_none();
+    unregister_process(&project_path);
+
+    // Handle non-success exit
+    if !status.success() {
+        if !error_output.is_empty() {
+            let _ = window.emit(
+                "agent-stream",
+                AgentStreamEvent::Error {
+                    project_path: project_path.clone(),
+                    message: error_output.clone(),
+                },
+            );
+            return Err(format!("{} CLI failed: {}", provider_name, error_output));
+        } else if was_interrupted {
+            return Err("Session interrupted".to_string());
+        } else {
+            let _ = window.emit(
+                "agent-stream",
+                AgentStreamEvent::Error {
+                    project_path: project_path.clone(),
+                    message: format!("{} CLI terminated unexpectedly", provider_name),
+                },
+            );
+            return Err(format!("{} CLI terminated unexpectedly", provider_name));
+        }
+    }
+
+    // Helper to check if text looks like a "done" message
+    let is_done_like = |text: &str| -> bool {
+        let trimmed = text.trim().to_lowercase();
+        trimmed.len() <= 15
+            && (trimmed == "done"
+                || trimmed == "done!"
+                || trimmed == "done."
+                || trimmed == "finished"
+                || trimmed == "finished!"
+                || trimmed == "complete"
+                || trimmed == "complete!"
+                || trimmed.starts_with("all done")
+                || trimmed.starts_with("that's it")
+                || trimmed.starts_with("thats it")
+                || trimmed.contains("✓ done")
+                || trimmed.contains("✓done")
+                || (trimmed.len() < 15 && trimmed.contains("done")))
+    };
+
+    let streaming_ends_with_done = full_output
+        .lines()
+        .last()
+        .map(|line| is_done_like(line))
+        .unwrap_or(false);
+
+    let final_content = if streaming_ends_with_done {
+        "All done! What would you like to do next?".to_string()
+    } else if let Some(ref last) = last_nonempty_content {
+        if is_done_like(last) {
+            "All done! What would you like to do next?".to_string()
+        } else if last.trim().len() > 10 {
+            last.clone()
+        } else {
+            last_substantial_content.unwrap_or_else(|| last.clone())
+        }
+    } else {
+        full_output.clone()
+    };
+
+    // Emit done event
+    let _ = window.emit(
+        "agent-stream",
+        AgentStreamEvent::Done {
+            project_path: project_path.clone(),
+            content: final_content.clone(),
+        },
+    );
+
+    // Save session ID for next conversation (provider-specific)
+    if let Some(ref sid) = captured_session_id {
+        if let Err(e) = save_session_id_for_provider(&project_path, sid, &provider_type) {
+            eprintln!("[WARN] Failed to save session ID: {}", e);
+        } else {
+            eprintln!("[DEBUG] Saved {} session ID: {}", provider_name, sid);
+        }
+    }
+
+    // Commit changes after agent finishes
+    let commit_msg = if message.len() > 50 {
+        format!("{}...", &message[..47])
+    } else {
+        message.clone()
+    };
+    let commit_hash = super::git::commit_changes(&project_path, &commit_msg)
+        .await
+        .ok();
+
+    Ok(ClaudeResponse {
+        content: final_content,
+        session_id: captured_session_id,
+        commit_hash,
+    })
 }

@@ -123,7 +123,7 @@ interface PreviewState {
   engineInitialized: boolean;
   editorOpen: boolean;
 
-  // Pending build version (set when Claude creates a new version, cleared on build success)
+  // Pending build version (set when agent creates a new version, cleared on build success)
   // Includes projectPath to ensure we only show glow for the correct project
   pendingBuildVersion: { projectPath: string; version: number } | null;
 
@@ -218,7 +218,7 @@ const initialState = {
   parameters: [] as PluginParameter[],
   demoSamples: [] as DemoSample[],
   pluginAvailable: false,
-  currentPluginVersion: 0,  // 0 = no plugin loaded yet, allows first Claude version to trigger glow
+  currentPluginVersion: 0,  // 0 = no plugin loaded yet, allows first agent version to trigger glow
   webviewNeedsFreshBuild: false,
   pluginLoading: false,
   engineInitialized: false,

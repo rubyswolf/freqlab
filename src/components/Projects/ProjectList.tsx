@@ -19,7 +19,7 @@ export function ProjectList({ collapsed = false }: ProjectListProps) {
   // Subscribe to busy state as primitives for proper memoization
   const buildingPath = useProjectBusyStore((s) => s.buildingPath);
   // Get the Set directly - we'll check membership in the card
-  const claudeBusyPaths = useProjectBusyStore((s) => s.claudeBusyPaths);
+  const agentBusyPaths = useProjectBusyStore((s) => s.agentBusyPaths);
 
   // Tour state - block switching to other projects during tour
   const tourActive = useTourStore((s) => s.isActive);
@@ -36,15 +36,15 @@ export function ProjectList({ collapsed = false }: ProjectListProps) {
   }, [loadProjects]);
 
   // Derive busy state for a project - memoized to avoid recalculating
-  const getBusyState = useCallback((projectPath: string): { isBusy: boolean; busyType: 'claude' | 'build' | null } => {
-    if (claudeBusyPaths.has(projectPath)) {
-      return { isBusy: true, busyType: 'claude' };
+  const getBusyState = useCallback((projectPath: string): { isBusy: boolean; busyType: 'agent' | 'build' | null } => {
+    if (agentBusyPaths.has(projectPath)) {
+      return { isBusy: true, busyType: 'agent' };
     }
     if (buildingPath === projectPath) {
       return { isBusy: true, busyType: 'build' };
     }
     return { isBusy: false, busyType: null };
-  }, [claudeBusyPaths, buildingPath]);
+  }, [agentBusyPaths, buildingPath]);
 
   // Disable project selection when any build is in progress
   const anyBuildInProgress = buildingPath !== null;

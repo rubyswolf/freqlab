@@ -33,7 +33,7 @@ function App() {
   const handleOffline = useCallback(() => {
     addToast({
       type: 'warning',
-      message: 'No internet connection. Claude requests will fail.',
+      message: 'No internet connection. Agent requests will fail.',
       duration: 10000, // Show longer since this is important
     });
   }, [addToast]);
@@ -61,19 +61,19 @@ function App() {
       try {
         const status = await invoke<PrerequisiteStatus>('check_prerequisites');
 
-        // Check if Claude CLI or auth have issues
+        // Check if agent CLI or auth have issues
         const cliOk = status.claude_cli.status === 'installed';
         const authOk = status.claude_auth.status === 'installed';
 
         if (!cliOk) {
           addToast({
             type: 'warning',
-            message: 'Claude CLI not found. Install it to use Claude features.',
+            message: 'Agent CLI not found. Check settings to configure your provider.',
           });
         } else if (!authOk) {
           addToast({
             type: 'warning',
-            message: 'Claude CLI not authenticated. Run "claude login" in terminal.',
+            message: 'Agent CLI not authenticated. Check settings to configure your provider.',
           });
         }
       } catch (err) {

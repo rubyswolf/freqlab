@@ -37,7 +37,7 @@ export function GuidedTour() {
   const loadedPlugin = usePreviewStore((s) => s.loadedPlugin);
 
   // Build state
-  const claudeBusyPaths = useProjectBusyStore((s) => s.claudeBusyPaths);
+  const agentBusyPaths = useProjectBusyStore((s) => s.agentBusyPaths);
   const buildingPath = useProjectBusyStore((s) => s.buildingPath);
 
   // Track the target element for current step
@@ -173,19 +173,19 @@ export function GuidedTour() {
     if (!isActive || currentStep !== 'highlight-send-button') return;
     if (!activeProject?.path) return;
 
-    const isChatBusy = claudeBusyPaths.has(activeProject.path);
+    const isChatBusy = agentBusyPaths.has(activeProject.path);
     if (isChatBusy) {
       // Message was sent - advance to waiting
       advanceToNextStep();
     }
-  }, [isActive, currentStep, activeProject?.path, claudeBusyPaths, advanceToNextStep]);
+  }, [isActive, currentStep, activeProject?.path, agentBusyPaths, advanceToNextStep]);
 
   // Auto-advance: Chat finished responding
   useEffect(() => {
     if (!isActive || currentStep !== 'wait-for-response') return;
     if (!activeProject?.path) return;
 
-    const isChatBusy = claudeBusyPaths.has(activeProject.path);
+    const isChatBusy = agentBusyPaths.has(activeProject.path);
     if (!isChatBusy) {
       // Chat finished - advance after longer delay to let chat scroll and settle
       // The version badge position changes as chat messages are added
@@ -194,7 +194,7 @@ export function GuidedTour() {
       }, 1500);
       return () => clearTimeout(timer);
     }
-  }, [isActive, currentStep, activeProject?.path, claudeBusyPaths, advanceToNextStep]);
+  }, [isActive, currentStep, activeProject?.path, agentBusyPaths, advanceToNextStep]);
 
   // Auto-advance: Build started
   useEffect(() => {
@@ -230,17 +230,17 @@ export function GuidedTour() {
   }, [isActive, currentStep, buildingPath, advanceToStep]);
 
   // Auto-advance: Fix error button clicked (chat becomes busy)
-  // Go back to wait-for-response to wait for Claude to fix the code
+  // Go back to wait-for-response to wait for agent to fix the code
   useEffect(() => {
     if (!isActive || currentStep !== 'show-fix-error') return;
     if (!activeProject?.path) return;
 
-    const isChatBusy = claudeBusyPaths.has(activeProject.path);
+    const isChatBusy = agentBusyPaths.has(activeProject.path);
     if (isChatBusy) {
       // Fix was clicked and chat is working - go back to waiting
       advanceToStep('wait-for-response');
     }
-  }, [isActive, currentStep, activeProject?.path, claudeBusyPaths, advanceToStep]);
+  }, [isActive, currentStep, activeProject?.path, agentBusyPaths, advanceToStep]);
 
   // Auto-advance: Plugin launched
   useEffect(() => {

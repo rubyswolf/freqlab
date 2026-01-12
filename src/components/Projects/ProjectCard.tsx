@@ -8,7 +8,7 @@ interface ProjectCardProps {
     project: ProjectMeta
     isActive: boolean
     isBusy: boolean
-    busyType: 'claude' | 'build' | null
+    busyType: 'agent' | 'build' | null
     collapsed?: boolean
     disabled?: boolean
     onClick: () => void
@@ -214,7 +214,7 @@ export const ProjectCard = memo(function ProjectCard({
                             </span>
                             {isBusy && (
                                 <span className="text-[10px] text-amber-400 flex-shrink-0 animate-pulse">
-                                    {busyType === 'claude' ? 'Working' : 'Building'}
+                                    {busyType === 'agent' ? 'Working' : 'Building'}
                                 </span>
                             )}
                         </div>

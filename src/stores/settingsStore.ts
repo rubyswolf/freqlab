@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { AppConfig, DawPaths, CustomThemeColors, AudioSettings, AISettings, ChatStyle, ClaudeModel, AgentVerbosity } from '../types';
+import type { AppConfig, DawPaths, CustomThemeColors, AudioSettings, AgentSettings, ChatStyle, ClaudeModel, AgentVerbosity, AgentProviderType } from '../types';
 
 const defaultDawPaths: DawPaths = {
   reaper: { vst3: '~/Library/Audio/Plug-Ins/VST3', clap: '~/Library/Audio/Plug-Ins/CLAP' },
@@ -26,11 +26,17 @@ const defaultAudioSettings: AudioSettings = {
   bufferSize: 512,
 };
 
-const defaultAISettings: AISettings = {
+const defaultAgentSettings: AgentSettings = {
   chatStyle: 'conversational',
   model: 'opus',
   customInstructions: '',
   agentVerbosity: 'balanced',
+  // Provider settings - default to Claude
+  defaultProvider: 'claude',
+  providerModels: {
+    claude: 'opus',
+    opencode: 'anthropic/claude-opus-4',
+  },
 };
 
 interface SettingsState extends AppConfig {
@@ -43,12 +49,15 @@ interface SettingsState extends AppConfig {
   // Mark current audioSettings as applied (called after engine init)
   markAudioSettingsApplied: () => void;
   // AI settings
-  aiSettings: AISettings;
-  setAISettings: (settings: AISettings) => void;
+  agentSettings: AgentSettings;
+  setAgentSettings: (settings: AgentSettings) => void;
   setChatStyle: (style: ChatStyle) => void;
   setModel: (model: ClaudeModel) => void;
   setCustomInstructions: (instructions: string) => void;
   setAgentVerbosity: (verbosity: AgentVerbosity) => void;
+  // Provider settings
+  setDefaultProvider: (provider: AgentProviderType) => void;
+  setProviderModel: (provider: AgentProviderType, model: string) => void;
   // Other settings
   setSetupComplete: (complete: boolean) => void;
   setWorkspacePath: (path: string) => void;
@@ -83,7 +92,7 @@ export const useSettingsStore = create<SettingsState>()(
       audioSettings: defaultAudioSettings,
       appliedAudioSettings: null, // Set on first engine init
       // AI settings defaults
-      aiSettings: defaultAISettings,
+      agentSettings: defaultAgentSettings,
 
       // Audio settings setters
       setAudioSettings: (settings) => set({ audioSettings: settings }),
@@ -100,22 +109,38 @@ export const useSettingsStore = create<SettingsState>()(
         })),
 
       // AI settings setters
-      setAISettings: (settings) => set({ aiSettings: settings }),
+      setAgentSettings: (settings) => set({ agentSettings: settings }),
       setChatStyle: (style) =>
         set((state) => ({
-          aiSettings: { ...state.aiSettings, chatStyle: style },
+          agentSettings: { ...state.agentSettings, chatStyle: style },
         })),
       setModel: (model) =>
         set((state) => ({
-          aiSettings: { ...state.aiSettings, model },
+          agentSettings: { ...state.agentSettings, model },
         })),
       setCustomInstructions: (instructions) =>
         set((state) => ({
-          aiSettings: { ...state.aiSettings, customInstructions: instructions },
+          agentSettings: { ...state.agentSettings, customInstructions: instructions },
         })),
       setAgentVerbosity: (verbosity) =>
         set((state) => ({
-          aiSettings: { ...state.aiSettings, agentVerbosity: verbosity },
+          agentSettings: { ...state.agentSettings, agentVerbosity: verbosity },
+        })),
+      setDefaultProvider: (provider) =>
+        set((state) => ({
+          agentSettings: { ...state.agentSettings, defaultProvider: provider },
+        })),
+      setProviderModel: (provider, model) =>
+        set((state) => ({
+          agentSettings: {
+            ...state.agentSettings,
+            providerModels: {
+              ...state.agentSettings.providerModels,
+              [provider]: model,
+            },
+            // Also update legacy model field if Claude is selected
+            ...(provider === 'claude' ? { model: model as ClaudeModel } : {}),
+          },
         })),
 
       setSetupComplete: (complete) => set({ setupComplete: complete }),
@@ -149,13 +174,19 @@ export const useSettingsStore = create<SettingsState>()(
       // Merge persisted state with defaults to handle new fields for existing users
       merge: (persistedState, currentState) => {
         const persisted = persistedState as Partial<SettingsState>;
+        const persistedAI = persisted.agentSettings || {};
         return {
           ...currentState,
           ...persisted,
-          // Deep merge aiSettings to pick up new fields (model, customInstructions)
-          aiSettings: {
-            ...currentState.aiSettings,
-            ...(persisted.aiSettings || {}),
+          // Deep merge agentSettings to pick up new fields (model, customInstructions, providerModels)
+          agentSettings: {
+            ...currentState.agentSettings,
+            ...persistedAI,
+            // Deep merge providerModels to handle new providers
+            providerModels: {
+              ...currentState.agentSettings.providerModels,
+              ...((persistedAI as AgentSettings).providerModels || {}),
+            },
           },
           // Deep merge other nested objects
           audioSettings: {

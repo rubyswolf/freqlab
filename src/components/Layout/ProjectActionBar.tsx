@@ -84,7 +84,7 @@ export function ProjectActionBar({
 
     // === REACTIVE STATE (with selectors) ===
     const buildingPath = useProjectBusyStore((s) => s.buildingPath)
-    const thisProjectClaudeBusy = useProjectBusyStore((s) => s.claudeBusyPaths.has(project.path))
+    const thisProjectAgentBusy = useProjectBusyStore((s) => s.agentBusyPaths.has(project.path))
     const pluginAvailable = usePreviewStore((s) => s.pluginAvailable)
     const webviewNeedsFreshBuild = usePreviewStore((s) => s.webviewNeedsFreshBuild)
     const currentPluginVersion = usePreviewStore((s) => s.currentPluginVersion)
@@ -114,15 +114,15 @@ export function ProjectActionBar({
     // === DERIVED STATE ===
     const isBuilding = buildingPath === project.path
     const anyBuildInProgress = buildingPath !== null
-    const buildDisabled = thisProjectClaudeBusy || anyBuildInProgress || buildBlocked
+    const buildDisabled = thisProjectAgentBusy || anyBuildInProgress || buildBlocked
     const publishDisabled = buildDisabled || !hasBuild || publishBlocked
     const needsWebviewRebuild = webviewNeedsFreshBuild && project.uiFramework === 'webview'
-    // Claude created a new version that hasn't been built yet (check projectPath matches to avoid cross-project glow)
-    const hasNewVersionFromClaude =
+    // Agent created a new version that hasn't been built yet (check projectPath matches to avoid cross-project glow)
+    const hasNewVersionFromAgent =
         pendingBuildVersion !== null &&
         pendingBuildVersion.projectPath === project.path &&
         pendingBuildVersion.version !== currentPluginVersion
-    const buildHighlighted = !pluginAvailable || needsWebviewRebuild || hasNewVersionFromClaude
+    const buildHighlighted = !pluginAvailable || needsWebviewRebuild || hasNewVersionFromAgent
 
     // Reset error message when project changes (it's project-specific text)
     // Note: lastFailedBuild and pendingBuildVersion are NOT reset - they're scoped by projectPath
@@ -162,17 +162,17 @@ export function ProjectActionBar({
         clear()
         setActive(true)
 
-        // Get current version for this project (0 = no Claude commits yet)
+        // Get current version for this project (0 = no agent commits yet)
         let version = 0
         try {
             version = await invoke<number>('get_current_version', {
                 projectPath: project.path
             })
         } catch {
-            // Default to v0 if we can't get version (pre-Claude state)
+            // Default to v0 if we can't get version (pre-agent state)
         }
 
-        // Use v1 minimum for display/output folder (v0 is internal "pre-Claude" state)
+        // Use v1 minimum for display/output folder (v0 is internal "pre-agent" state)
         const buildVersion = Math.max(version, 1)
         addLine(`> Building ${project.name} (v${buildVersion})...`)
         addLine('')
@@ -282,7 +282,7 @@ export function ProjectActionBar({
     const handleBuildRef = useRef(handleBuild)
     handleBuildRef.current = handleBuild
 
-    // Clear failed build when a new pending version comes in for THIS project (Claude made new changes)
+    // Clear failed build when a new pending version comes in for THIS project (agent made new changes)
     useEffect(() => {
         if (
             pendingBuildVersion &&
@@ -348,7 +348,7 @@ export function ProjectActionBar({
                 className={`flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-lg border transition-all duration-200 ${
                     buildDisabled
                         ? 'bg-bg-tertiary text-text-muted border-border opacity-50 cursor-not-allowed'
-                        : hasNewVersionFromClaude
+                        : hasNewVersionFromAgent
                         ? 'bg-accent/15 text-accent border border-accent/50 hover:bg-accent/25 hover:border-accent shadow-[0_0_12px_rgba(16,185,129,0.4)] animate-pulse'
                         : buildHighlighted
                         ? 'bg-accent hover:bg-accent-hover text-white border-accent'
@@ -359,7 +359,7 @@ export function ProjectActionBar({
                         ? anyBuildInProgress
                             ? 'Build in progress...'
                             : 'Working on this project...'
-                        : hasNewVersionFromClaude
+                        : hasNewVersionFromAgent
                         ? `Build v${pendingBuildVersion?.version}`
                         : 'Build plugin'
                 }

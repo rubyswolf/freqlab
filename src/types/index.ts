@@ -59,11 +59,31 @@ export type ClaudeModel = 'haiku' | 'sonnet' | 'opus';
 // Controls how verbose/detailed the agent is in responses
 export type AgentVerbosity = 'thorough' | 'balanced' | 'direct';
 
-export interface AISettings {
+// Available AI agent providers
+export type AgentProviderType = 'claude' | 'opencode';
+
+// Provider-specific model selections
+export interface ProviderModels {
+  claude: ClaudeModel;
+  opencode: string;  // OpenCode uses provider/model format like "anthropic/claude-sonnet-4"
+}
+
+// Provider installation/auth status
+export interface ProviderStatus {
+  installed: boolean;
+  authenticated: boolean;
+  version?: string;
+  error?: string;
+}
+
+export interface AgentSettings {
   chatStyle: ChatStyle;
-  model: ClaudeModel;
+  model: ClaudeModel;  // Keep for backwards compat, but prefer providerModels
   customInstructions: string;
   agentVerbosity: AgentVerbosity;
+  // Provider settings
+  defaultProvider: AgentProviderType;
+  providerModels: ProviderModels;
 }
 
 export interface AppConfig {

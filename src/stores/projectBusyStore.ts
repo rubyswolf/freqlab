@@ -1,63 +1,63 @@
 import { create } from 'zustand';
 
 interface ProjectBusyState {
-  // Track which projects are busy with Claude (supports multiple concurrent)
-  claudeBusyPaths: Set<string>;
+  // Track which projects are busy with the agent (supports multiple concurrent)
+  agentBusyPaths: Set<string>;
   // Track when each project started being busy (for elapsed time display)
-  claudeStartTimes: Map<string, number>;
-  setClaudeBusy: (path: string) => void;
-  clearClaudeBusy: (path: string) => void;
-  isClaudeBusy: (path: string) => boolean;
-  getClaudeBusyPaths: () => string[];
-  getClaudeStartTime: (path: string) => number | undefined;
+  agentStartTimes: Map<string, number>;
+  setAgentBusy: (path: string) => void;
+  clearAgentBusy: (path: string) => void;
+  isAgentBusy: (path: string) => boolean;
+  getAgentBusyPaths: () => string[];
+  getAgentStartTime: (path: string) => number | undefined;
 
   // Track which project is building (only one at a time)
   buildingPath: string | null;
   setBuildingPath: (path: string | null) => void;
   clearBuildingIfMatch: (path: string) => void;
 
-  // Check if a specific project is busy (either Claude or building)
+  // Check if a specific project is busy (either agent or building)
   isProjectBusy: (path: string) => boolean;
 
   // Check if ANY project is busy
   isAnyBusy: () => boolean;
 
-  // Check if any project (other than the given one) has Claude busy
-  hasOtherClaudeBusy: (currentPath: string) => boolean;
+  // Check if any project (other than the given one) has agent busy
+  hasOtherAgentBusy: (currentPath: string) => boolean;
 }
 
 export const useProjectBusyStore = create<ProjectBusyState>((set, get) => ({
-  claudeBusyPaths: new Set<string>(),
-  claudeStartTimes: new Map<string, number>(),
+  agentBusyPaths: new Set<string>(),
+  agentStartTimes: new Map<string, number>(),
 
-  setClaudeBusy: (path) => set((state) => {
-    const newPaths = new Set(state.claudeBusyPaths);
+  setAgentBusy: (path) => set((state) => {
+    const newPaths = new Set(state.agentBusyPaths);
     newPaths.add(path);
-    const newStartTimes = new Map(state.claudeStartTimes);
+    const newStartTimes = new Map(state.agentStartTimes);
     if (!newStartTimes.has(path)) {
       newStartTimes.set(path, Date.now());
     }
-    return { claudeBusyPaths: newPaths, claudeStartTimes: newStartTimes };
+    return { agentBusyPaths: newPaths, agentStartTimes: newStartTimes };
   }),
 
-  clearClaudeBusy: (path) => set((state) => {
-    const newPaths = new Set(state.claudeBusyPaths);
+  clearAgentBusy: (path) => set((state) => {
+    const newPaths = new Set(state.agentBusyPaths);
     newPaths.delete(path);
-    const newStartTimes = new Map(state.claudeStartTimes);
+    const newStartTimes = new Map(state.agentStartTimes);
     newStartTimes.delete(path);
-    return { claudeBusyPaths: newPaths, claudeStartTimes: newStartTimes };
+    return { agentBusyPaths: newPaths, agentStartTimes: newStartTimes };
   }),
 
-  isClaudeBusy: (path) => {
-    return get().claudeBusyPaths.has(path);
+  isAgentBusy: (path) => {
+    return get().agentBusyPaths.has(path);
   },
 
-  getClaudeBusyPaths: () => {
-    return Array.from(get().claudeBusyPaths);
+  getAgentBusyPaths: () => {
+    return Array.from(get().agentBusyPaths);
   },
 
-  getClaudeStartTime: (path) => {
-    return get().claudeStartTimes.get(path);
+  getAgentStartTime: (path) => {
+    return get().agentStartTimes.get(path);
   },
 
   buildingPath: null,
@@ -71,17 +71,17 @@ export const useProjectBusyStore = create<ProjectBusyState>((set, get) => ({
 
   isProjectBusy: (path) => {
     const state = get();
-    return state.claudeBusyPaths.has(path) || state.buildingPath === path;
+    return state.agentBusyPaths.has(path) || state.buildingPath === path;
   },
 
   isAnyBusy: () => {
     const state = get();
-    return state.claudeBusyPaths.size > 0 || state.buildingPath !== null;
+    return state.agentBusyPaths.size > 0 || state.buildingPath !== null;
   },
 
-  hasOtherClaudeBusy: (currentPath) => {
+  hasOtherAgentBusy: (currentPath) => {
     const state = get();
-    for (const path of state.claudeBusyPaths) {
+    for (const path of state.agentBusyPaths) {
       if (path !== currentPath) {
         return true;
       }

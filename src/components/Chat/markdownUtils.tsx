@@ -86,7 +86,7 @@ export const markdownComponents = {
   },
 };
 
-// Remove trailing colon from message content (common artifact from Claude's responses)
+// Remove trailing colon from message content (common artifact from LLM responses)
 export function cleanMessageContent(content: string): string {
   const trimmed = content.trimEnd();
   if (trimmed.endsWith(':')) {

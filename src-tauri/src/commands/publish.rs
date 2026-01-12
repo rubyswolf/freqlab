@@ -94,7 +94,7 @@ pub async fn publish_to_daw(
     let mut copied = Vec::new();
     let mut errors = Vec::new();
 
-    // Map version 0 (no Claude commits) to v1 for filesystem lookups
+    // Map version 0 (no agent commits) to v1 for filesystem lookups
     // Fresh projects build to v1, but get_current_version returns 0
     let folder_version = version.max(1);
 
@@ -257,7 +257,7 @@ pub async fn check_available_formats(
     let base_output_path = get_output_path();
     let snake_name = project_name.replace('-', "_");
 
-    // Map version 0 (no Claude commits) to v1 for filesystem lookups
+    // Map version 0 (no agent commits) to v1 for filesystem lookups
     let folder_version = version.max(1);
 
     // Use versioned output folder: output/{project_name}/v{version}/
@@ -297,7 +297,7 @@ pub async fn package_plugins(
     let base_output_path = get_output_path();
     let snake_name = project_name.replace('-', "_");
 
-    // Map version 0 (no Claude commits) to v1 for filesystem lookups
+    // Map version 0 (no agent commits) to v1 for filesystem lookups
     let folder_version = version.max(1);
 
     // Use versioned output folder: output/{project_name}/v{version}/

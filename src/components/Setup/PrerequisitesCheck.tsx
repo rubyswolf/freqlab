@@ -494,7 +494,7 @@ export function PrerequisitesCheck({ onComplete }: PrerequisitesCheckProps) {
       onInstall: handleInstallClaudeCli,
       installLabel: getClaudeCliInstallLabel(),
       help: {
-        description: 'The AI assistant that helps write your plugin code',
+        description: 'The coding agent that helps write your plugin code',
         instruction: 'Requires Node.js 18+. Install with npm:',
         command: 'npm install -g @anthropic-ai/claude-code',
         note: (<>Don't have Node.js? Get it from <a href="https://nodejs.org" target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">nodejs.org</a> (LTS version recommended)</>),

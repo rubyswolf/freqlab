@@ -4,7 +4,7 @@ import { ThemePicker } from './ThemePicker';
 import { BrandingSettings } from './BrandingSettings';
 import { DawPathsSettings } from './DawPathsSettings';
 import { AudioSettings } from './AudioSettings';
-import { AISettings } from './AISettings';
+import { AgentSettings } from './AgentSettings';
 import { DevSettings } from './DevSettings';
 import { UpdateSettings } from './UpdateSettings';
 import { useUpdateStore } from '../../stores/updateStore';
@@ -15,7 +15,7 @@ interface SettingsModalProps {
   initialTab?: string;
 }
 
-type TabId = 'general' | 'audio' | 'ai' | 'branding' | 'daw-paths' | 'updates' | 'dev';
+type TabId = 'general' | 'audio' | 'agent' | 'branding' | 'daw-paths' | 'updates' | 'dev';
 
 interface Tab {
   id: TabId;
@@ -45,8 +45,8 @@ const tabs: Tab[] = [
     ),
   },
   {
-    id: 'ai',
-    label: 'Chat',
+    id: 'agent',
+    label: 'Agent',
     icon: (
       <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
         <path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z" />
@@ -106,7 +106,7 @@ export function SettingsModal({ isOpen, onClose, initialTab }: SettingsModalProp
 
   // Helper to validate tab ID
   const isValidTabId = (id: string): id is TabId => {
-    return ['general', 'audio', 'ai', 'branding', 'daw-paths', 'updates', 'dev'].includes(id);
+    return ['general', 'audio', 'agent', 'branding', 'daw-paths', 'updates', 'dev'].includes(id);
   };
 
   // Set initial tab when modal opens
@@ -152,7 +152,7 @@ export function SettingsModal({ isOpen, onClose, initialTab }: SettingsModalProp
         <div className="flex-1 min-w-0 overflow-y-auto pr-2">
           {activeTab === 'general' && <ThemePicker />}
           {activeTab === 'audio' && <AudioSettings />}
-          {activeTab === 'ai' && <AISettings />}
+          {activeTab === 'agent' && <AgentSettings />}
           {activeTab === 'branding' && <BrandingSettings />}
           {activeTab === 'daw-paths' && <DawPathsSettings />}
           {activeTab === 'updates' && <UpdateSettings />}

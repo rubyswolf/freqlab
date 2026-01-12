@@ -10,11 +10,11 @@ import { useProjectBusyStore } from '../../stores/projectBusyStore';
 import { usePreviewStore } from '../../stores/previewStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { registerTourRef, unregisterTourRef } from '../../utils/tourRefs';
-import type { ChatMessage as ChatMessageType, ChatState, ProjectMeta, FileAttachment } from '../../types';
+import type { ChatMessage as ChatMessageType, ChatState, ProjectMeta, FileAttachment, AgentProviderType } from '../../types';
 import { markdownComponents } from './markdownUtils';
 
-// 30 minute timeout for Claude sessions (in milliseconds)
-const CLAUDE_TIMEOUT_MS = 30 * 60 * 1000;
+// 30 minute timeout for agent sessions (in milliseconds)
+const AGENT_TIMEOUT_MS = 30 * 60 * 1000;
 
 interface AttachmentInput {
   originalName: string;
@@ -31,7 +31,7 @@ interface StoredAttachment {
   size: number;
 }
 
-interface ClaudeStreamEvent {
+interface AgentStreamEvent {
   type: 'start' | 'text' | 'error' | 'done';
   project_path: string;
   content?: string;
@@ -58,8 +58,8 @@ export function ChatPanel({ project, onVersionChange }: ChatPanelProps) {
   // Initialize elapsed time from store to prevent "0s flash" when switching to a loading project
   const [elapsedSeconds, setElapsedSeconds] = useState(() => {
     const store = useProjectBusyStore.getState();
-    if (store.isClaudeBusy(project.path)) {
-      const startTime = store.getClaudeStartTime(project.path);
+    if (store.isAgentBusy(project.path)) {
+      const startTime = store.getAgentStartTime(project.path);
       if (startTime) {
         return Math.floor((Date.now() - startTime) / 1000);
       }
@@ -93,19 +93,19 @@ export function ChatPanel({ project, onVersionChange }: ChatPanelProps) {
   const clearStreamingContent = useChatStore.getState().clearStreamingContent;
 
   // Subscribe to derived busy state booleans (triggers re-render when they change)
-  // Using selectors ensures component re-renders when Claude busy state changes
-  const isLoading = useProjectBusyStore((s) => s.claudeBusyPaths.has(project.path));
+  // Using selectors ensures component re-renders when agent busy state changes
+  const isLoading = useProjectBusyStore((s) => s.agentBusyPaths.has(project.path));
   const isBusy = useProjectBusyStore((s) =>
-    s.claudeBusyPaths.has(project.path) || s.buildingPath === project.path
+    s.agentBusyPaths.has(project.path) || s.buildingPath === project.path
   );
 
   // Get stable action references via getState() (no subscription needed for actions)
-  const setClaudeBusy = useProjectBusyStore.getState().setClaudeBusy;
-  const clearClaudeBusy = useProjectBusyStore.getState().clearClaudeBusy;
-  const getClaudeStartTime = useProjectBusyStore.getState().getClaudeStartTime;
+  const setAgentBusy = useProjectBusyStore.getState().setAgentBusy;
+  const clearAgentBusy = useProjectBusyStore.getState().clearAgentBusy;
+  const getAgentStartTime = useProjectBusyStore.getState().getAgentStartTime;
 
-  const aiSettings = useSettingsStore((s) => s.aiSettings);
-  const chatStyle = aiSettings.chatStyle;
+  const agentSettings = useSettingsStore((s) => s.agentSettings);
+  const chatStyle = agentSettings.chatStyle;
   // Track chat style for current processing session (initialized from setting, captured when chat starts)
   const activeChatStyleRef = useRef(chatStyle);
 
@@ -121,15 +121,15 @@ export function ChatPanel({ project, onVersionChange }: ChatPanelProps) {
   const resetTimeout = useCallback(() => {
     clearTimeoutTimer();
     timeoutRef.current = setTimeout(async () => {
-      // Timeout reached - interrupt Claude
-      console.warn('[ChatPanel] Claude session timed out after 30 minutes');
+      // Timeout reached - interrupt agent
+      console.warn('[ChatPanel] Agent session timed out after 30 minutes');
       addLine('[WARNING] Session timed out after 30 minutes of no activity');
       try {
-        await invoke('interrupt_claude', { projectPath: project.path });
+        await invoke('interrupt_agent', { projectPath: project.path });
       } catch (err) {
-        console.error('Failed to interrupt Claude:', err);
+        console.error('Failed to interrupt agent:', err);
       }
-    }, CLAUDE_TIMEOUT_MS);
+    }, AGENT_TIMEOUT_MS);
   }, [clearTimeoutTimer, addLine, project.path]);
 
   // Interrupt handler
@@ -137,14 +137,14 @@ export function ChatPanel({ project, onVersionChange }: ChatPanelProps) {
     clearTimeoutTimer();
     addLine('[Interrupting...]');
     try {
-      await invoke('interrupt_claude', { projectPath: project.path });
+      await invoke('interrupt_agent', { projectPath: project.path });
     } catch (err) {
       // If there's no active session, it might have just finished - that's fine
       const errorStr = String(err);
-      if (errorStr.includes('No active Claude session')) {
+      if (errorStr.includes('No active') && errorStr.includes('session')) {
         addLine('[Session already finished]');
       } else {
-        console.error('Failed to interrupt Claude:', err);
+        console.error('Failed to interrupt agent:', err);
         addLine(`[ERROR] Failed to interrupt: ${err}`);
       }
     }
@@ -191,30 +191,30 @@ export function ChatPanel({ project, onVersionChange }: ChatPanelProps) {
     isLoading: false,
   });
 
-  // Load chat history when project changes OR when Claude finishes working on this project
+  // Load chat history when project changes OR when agent finishes working on this project
   useEffect(() => {
     const prev = prevStateRef.current;
     const projectChanged = prev.projectPath !== project.path;
-    const claudeJustFinished = prev.isLoading && !isLoading && !projectChanged;
-    const claudeJustStarted = !prev.isLoading && isLoading && !projectChanged;
+    const agentJustFinished = prev.isLoading && !isLoading && !projectChanged;
+    const agentJustStarted = !prev.isLoading && isLoading && !projectChanged;
 
     // Update ref for next render
     prevStateRef.current = { projectPath: project.path, isLoading };
 
-    if (claudeJustStarted) {
+    if (agentJustStarted) {
       // User just sent a message - handleSend is managing state, don't interfere
       return;
     }
 
-    if (claudeJustFinished) {
-      // Claude just finished working on THIS project
+    if (agentJustFinished) {
+      // Agent just finished working on THIS project
       // If handleSend just completed, it already set the correct state - skip reload
       // This prevents a race condition where loadHistory would overwrite with stale disk data
       if (handleSendCompletedRef.current) {
         handleSendCompletedRef.current = false;
         return;
       }
-      // Otherwise reload to get the saved result (e.g., after component remount during Claude work)
+      // Otherwise reload to get the saved result (e.g., after component remount during agent work)
       loadHistory();
       return;
     }
@@ -385,7 +385,7 @@ export function ChatPanel({ project, onVersionChange }: ChatPanelProps) {
 
     // Calculate elapsed from start time stored in the busy store
     const updateElapsed = () => {
-      const startTime = getClaudeStartTime(project.path);
+      const startTime = getAgentStartTime(project.path);
       if (startTime) {
         setElapsedSeconds(Math.floor((Date.now() - startTime) / 1000));
       }
@@ -395,7 +395,7 @@ export function ChatPanel({ project, onVersionChange }: ChatPanelProps) {
     updateElapsed();
     const interval = setInterval(updateElapsed, 1000);
     return () => clearInterval(interval);
-  }, [isLoading, project.path, getClaudeStartTime]);
+  }, [isLoading, project.path, getAgentStartTime]);
 
   const handleSend = useCallback(async (content: string, attachments?: PendingAttachment[]) => {
     // Capture current chat style at start of processing (so changing settings mid-chat doesn't affect display)
@@ -445,7 +445,7 @@ export function ChatPanel({ project, onVersionChange }: ChatPanelProps) {
     const messagesWithUser = [...currentMessages, userMessage];
     setMessages(messagesWithUser);
     messagesRef.current = messagesWithUser; // Keep ref in sync immediately
-    setClaudeBusy(project.path);
+    setAgentBusy(project.path);
     clearStreamingContent(project.path);
     streamingContentRef.current = '';
 
@@ -473,12 +473,12 @@ export function ChatPanel({ project, onVersionChange }: ChatPanelProps) {
     resetTimeout();
 
     // Listen for streaming events - filter by project path to prevent cross-talk
-    const unlisten = await listen<ClaudeStreamEvent>('claude-stream', (event) => {
+    const unlisten = await listen<AgentStreamEvent>('agent-stream', (event) => {
       const data = event.payload;
       // Only process events for THIS project
       if (data.project_path !== project.path) return;
 
-      // Reset timeout on any activity from Claude
+      // Reset timeout on any activity from agent
       resetTimeout();
 
       if (data.type === 'text' && data.content) {
@@ -495,24 +495,31 @@ export function ChatPanel({ project, onVersionChange }: ChatPanelProps) {
       }
     });
 
-    // Build message with file context for Claude
-    let messageForClaude = content;
+    // Build message with file context for agent
+    let messageForAgent = content;
     if (storedAttachments && storedAttachments.length > 0) {
       const fileContext = storedAttachments
         .map((a) => `[Attached file: ${a.originalName} at ${a.path}]`)
         .join('\n');
-      messageForClaude = `${fileContext}\n\n${content}`;
+      messageForAgent = `${fileContext}\n\n${content}`;
     }
 
     try {
-      const response = await invoke<{ content: string; commit_hash?: string }>('send_to_claude', {
-        projectPath: project.path,
-        projectName: project.name,
+      // Get the appropriate model for the current provider
+      const providerType = agentSettings.defaultProvider || 'claude';
+      const model = providerType === 'claude'
+        ? agentSettings.providerModels?.claude || agentSettings.model
+        : agentSettings.providerModels?.opencode || 'anthropic/claude-opus-4';
+
+      const response = await invoke<{ content: string; commit_hash?: string }>('send_to_agent', {
+        provider_type: providerType as AgentProviderType,
+        project_path: project.path,
+        project_name: project.name,
         description: project.description,
-        message: messageForClaude,
-        model: aiSettings.model,
-        customInstructions: aiSettings.customInstructions,
-        agentVerbosity: aiSettings.agentVerbosity,
+        message: messageForAgent,
+        model,
+        custom_instructions: agentSettings.customInstructions,
+        agent_verbosity: agentSettings.agentVerbosity,
       });
 
       // Calculate next version number if this response has a commit (files were changed)
@@ -631,16 +638,16 @@ export function ChatPanel({ project, onVersionChange }: ChatPanelProps) {
       unlisten();
       // Clear the timeout timer since we're done
       clearTimeoutTimer();
-      // Only clear if we're still the active Claude session (prevents race with other projects)
-      clearClaudeBusy(project.path);
+      // Only clear if we're still the active agent session (prevents race with other projects)
+      clearAgentBusy(project.path);
       clearStreamingContent(project.path);
       streamingContentRef.current = '';
       addLine('');
       addLine('[Done]');
     }
-  }, [project, addLine, clear, setClaudeBusy, clearClaudeBusy, clearStreamingContent, resetTimeout, clearTimeoutTimer, chatStyle]);
+  }, [project, addLine, clear, setAgentBusy, clearAgentBusy, clearStreamingContent, resetTimeout, clearTimeoutTimer, chatStyle, agentSettings]);
 
-  // Watch for pending messages (e.g., from "Fix with Claude" button)
+  // Watch for pending messages (e.g., from "Fix Error" button)
   useEffect(() => {
     if (pendingMessage && !isLoading) {
       handleSend(pendingMessage);
@@ -650,7 +657,7 @@ export function ChatPanel({ project, onVersionChange }: ChatPanelProps) {
 
   // Handle changing to a specific version (works for both forward and backward)
   const handleVersionChange = useCallback(async (version: number, commitHash: string) => {
-    setClaudeBusy(project.path);
+    setAgentBusy(project.path);
 
     // Calculate effective active version (same logic as render)
     const latestVersion = messages.reduce((max, m) =>
@@ -680,9 +687,9 @@ export function ChatPanel({ project, onVersionChange }: ChatPanelProps) {
     } catch (err) {
       addLine(`[ERROR] Failed to change version: ${err}`);
     } finally {
-      clearClaudeBusy(project.path);
+      clearAgentBusy(project.path);
     }
-  }, [project.path, messages, activeVersion, addLine, setClaudeBusy, clearClaudeBusy]);
+  }, [project.path, messages, activeVersion, addLine, setAgentBusy, clearAgentBusy]);
 
   // Memoize version calculations - used by header and message list
   const latestVersion = useMemo(() =>

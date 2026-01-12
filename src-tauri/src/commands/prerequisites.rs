@@ -1,9 +1,12 @@
 use serde::Serialize;
+use std::collections::HashMap;
 use std::process::{Command, Stdio};
 use std::sync::Mutex;
 use std::time::Duration;
 use tauri::Emitter;
 use tokio::io::{AsyncBufReadExt, BufReader};
+
+use super::agent_provider::{AgentProviderType, ProviderStatus};
 
 // Track active child process PIDs for cleanup on exit
 static ACTIVE_CHILD_PIDS: Mutex<Vec<u32>> = Mutex::new(Vec::new());
@@ -259,6 +262,135 @@ pub async fn check_prerequisites() -> PrerequisiteStatus {
             version: None,
             message: Some("Check failed".to_string()),
         },
+    })
+}
+
+// ============================================================================
+// Provider Status Checks
+// ============================================================================
+
+/// Check OpenCode CLI installation status
+fn check_opencode_cli() -> ProviderStatus {
+    // Check if opencode binary exists
+    match run_command_with_timeout("which", &["opencode"], 3) {
+        Some(output) if output.status.success() => {
+            // Try to get version
+            let version = run_command_with_timeout("opencode", &["--version"], 5)
+                .and_then(|o| {
+                    if o.status.success() {
+                        let v = String::from_utf8_lossy(&o.stdout).trim().to_string();
+                        if !v.is_empty() { Some(v) } else { None }
+                    } else {
+                        None
+                    }
+                });
+
+            // Check authentication status
+            // OpenCode stores config in ~/.config/opencode/
+            let home = std::env::var("HOME").unwrap_or_default();
+            let config_dir = std::path::Path::new(&home).join(".config").join("opencode");
+            let config_file = config_dir.join("config.json");
+            let authenticated = config_file.exists();
+
+            ProviderStatus {
+                installed: true,
+                authenticated,
+                version,
+                error: if !authenticated {
+                    Some("Run: opencode auth login".to_string())
+                } else {
+                    None
+                },
+            }
+        }
+        _ => ProviderStatus {
+            installed: false,
+            authenticated: false,
+            version: None,
+            error: Some("Run: curl -fsSL https://opencode.ai/install | bash".to_string()),
+        },
+    }
+}
+
+/// Check Claude CLI installation and auth status for provider API
+fn check_claude_provider() -> ProviderStatus {
+    // Check if claude binary exists
+    match run_command_with_timeout("which", &["claude"], 3) {
+        Some(output) if output.status.success() => {
+            // Try to get version - use a simpler approach
+            let version = run_command_with_timeout("claude", &["--version"], 5)
+                .and_then(|o| {
+                    if o.status.success() {
+                        let v = String::from_utf8_lossy(&o.stdout).trim().to_string();
+                        // Version string might be multi-line, take first line
+                        v.lines().next().map(|s| s.to_string())
+                    } else {
+                        None
+                    }
+                });
+
+            // Check authentication using same logic as check_claude_auth
+            let home = std::env::var("HOME").unwrap_or_default();
+            let claude_dir = std::path::Path::new(&home).join(".claude");
+            let settings_file = claude_dir.join("settings.json");
+            let credentials_file = claude_dir.join("credentials.json");
+            let projects_dir = claude_dir.join("projects");
+
+            let authenticated = settings_file.exists()
+                || credentials_file.exists()
+                || (claude_dir.exists() && projects_dir.exists());
+
+            ProviderStatus {
+                installed: true,
+                authenticated,
+                version,
+                error: if !authenticated {
+                    Some("Run: claude (then type /login)".to_string())
+                } else {
+                    None
+                },
+            }
+        }
+        _ => ProviderStatus {
+            installed: false,
+            authenticated: false,
+            version: None,
+            error: Some("Run: npm i -g @anthropic-ai/claude-code".to_string()),
+        },
+    }
+}
+
+/// Check all agent provider installation and authentication status
+#[tauri::command]
+pub async fn check_agent_providers() -> HashMap<AgentProviderType, ProviderStatus> {
+    tokio::task::spawn_blocking(|| {
+        let mut status = HashMap::new();
+        status.insert(AgentProviderType::Claude, check_claude_provider());
+        status.insert(AgentProviderType::OpenCode, check_opencode_cli());
+        status
+    })
+    .await
+    .unwrap_or_else(|_| {
+        let mut status = HashMap::new();
+        status.insert(
+            AgentProviderType::Claude,
+            ProviderStatus {
+                installed: false,
+                authenticated: false,
+                version: None,
+                error: Some("Check failed".to_string()),
+            },
+        );
+        status.insert(
+            AgentProviderType::OpenCode,
+            ProviderStatus {
+                installed: false,
+                authenticated: false,
+                version: None,
+                error: Some("Check failed".to_string()),
+            },
+        );
+        status
     })
 }
 

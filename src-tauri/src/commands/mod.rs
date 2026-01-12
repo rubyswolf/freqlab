@@ -4,6 +4,8 @@ pub mod projects;
 pub mod claude;
 pub mod claude_md;
 pub mod claude_skills;
+pub mod agent_provider;
+pub mod providers;
 pub mod build;
 pub mod git;
 pub mod chat;
