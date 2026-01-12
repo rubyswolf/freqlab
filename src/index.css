@@ -127,14 +127,14 @@ select {
   animation: fadeIn 0.3s ease-out;
 }
 
-/* Chat bubble animation - slightly faster and more subtle */
+/* Chat bubble animation - slide up with fade */
 @keyframes chatBubbleIn {
-  from { opacity: 0; transform: translateY(10px); }
+  from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: translateY(0); }
 }
 
 .animate-chat-bubble {
-  animation: chatBubbleIn 0.2s ease-out;
+  animation: chatBubbleIn 0.2s ease-out forwards;
 }
 
 .animate-pulse-subtle {
