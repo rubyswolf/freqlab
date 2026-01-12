@@ -18,20 +18,6 @@
 
 ---
 
-<table>
-<tr>
-<td>
-
-### 💚 Support freqlab
-
-If you find freqlab useful, consider supporting development at **[freqlab.app](https://freqlab.app)** — we have a **name-your-price** option so you can pay what feels right.
-
-</td>
-</tr>
-</table>
-
----
-
 > [!NOTE]
 > This is a personal side project that I initially built for my wife who's a sound designer and is **not consistently maintained**. It was a vibe experiment, so **use as-is**.
 >
@@ -44,6 +30,18 @@ If you find freqlab useful, consider supporting development at **[freqlab.app](h
 Most AI apps are trying to replace traditional music/audio creative flows (ie. suno and other exploitative gen-ai), I wanted to create something that genuinely assists their creative process instead of replacing it.
 
 freqlab was built for producers and sound designers who aren't developers, but who have always dreamed of creating unique plugins for their projects.
+
+<table>
+<tr>
+<td>
+
+### 💚 Support freqlab
+
+If you find freqlab useful, consider supporting development at **[freqlab.app](https://freqlab.app)** — we have a **name-your-price** option so you can pay what feels right.
+
+</td>
+</tr>
+</table>
 
 ### The Workflow
 
@@ -81,6 +79,7 @@ Describe → Build → Preview → Iterate → Publish
 | **Live audio input**  | Route audio from your interface through your plugin                |
 | **Level metering**    | Real-time input/output monitoring with dB display                  |
 | **Spectrum analyzer** | Real-time FFT frequency visualization                              |
+| **Waveform display**  | Time-domain audio visualization                                    |
 | **Stereo imager**     | Stereo field and phase correlation visualization                   |
 | **Plugin editor**     | Open the plugin's GUI in a floating window                         |
 
