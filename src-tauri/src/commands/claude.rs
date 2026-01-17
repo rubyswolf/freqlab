@@ -533,7 +533,7 @@ pub async fn send_to_claude(
         "--output-format".to_string(),
         "stream-json".to_string(),
         "--max-turns".to_string(),
-        "15".to_string(),
+        "50".to_string(),
     ];
 
     // Add model flag if specified

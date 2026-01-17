@@ -61,6 +61,13 @@ target/
 
 # App state (chat history, sessions) - not source code
 .vstworkshop/
+
+# Claude working files - not versioned source code
+.claude/
+CLAUDE.md
+docs/
+plans/
+*.plan.md
 "#;
 
     std::fs::write(format!("{}/.gitignore", path), gitignore_content)
@@ -73,33 +80,39 @@ target/
 fn commit_changes_sync(path: &str, message: &str) -> Result<String, String> {
     eprintln!("[DEBUG] commit_changes_sync: path={}", path);
 
-    // Stage all changes
-    let add_output = git_command()
-        .current_dir(path)
-        .args(["add", "-A"])
-        .output()
-        .map_err(|e| format!("Failed to run git add: {}", e))?;
+    // Only stage source code and essential config files - ignore plan files, docs, etc.
+    // This prevents intermediate planning/documentation from creating versions
+    let source_patterns = [
+        "src/",           // Rust source code (includes lib.rs, ui.html)
+        "Cargo.toml",     // Project manifest
+        "Cargo.lock",     // Dependencies lock
+        ".gitignore",     // Git config (created at project setup)
+    ];
 
-    if !add_output.status.success() {
-        let stderr = String::from_utf8_lossy(&add_output.stderr);
-        eprintln!("[DEBUG] git add failed: {}", stderr);
-        return Err(format!("git add failed: {}", stderr));
+    for pattern in &source_patterns {
+        let _ = git_command()
+            .current_dir(path)
+            .args(["add", pattern])
+            .output();
+        // Ignore errors - pattern might not match any files
     }
 
-    // Check if there are changes to commit
-    let status_output = git_command()
-        .current_dir(path)
-        .args(["status", "--porcelain"])
-        .output()
-        .map_err(|e| format!("Failed to run git status: {}", e))?;
+    eprintln!("[DEBUG] Staged source files only (src/, Cargo.toml, Cargo.lock, .gitignore)");
 
-    let status = String::from_utf8_lossy(&status_output.stdout);
-    eprintln!("[DEBUG] git status output: '{}'", status.trim());
-    if status.trim().is_empty() {
-        // Nothing to commit - return error so caller knows no new commit was made
-        eprintln!("[DEBUG] No changes detected by git status");
+    // Check if there are STAGED changes to commit (not just any changes)
+    // git diff --cached --quiet exits with 1 if there are staged changes, 0 if none
+    let diff_output = git_command()
+        .current_dir(path)
+        .args(["diff", "--cached", "--quiet"])
+        .output()
+        .map_err(|e| format!("Failed to run git diff: {}", e))?;
+
+    if diff_output.status.success() {
+        // Exit code 0 means no staged changes
+        eprintln!("[DEBUG] No staged changes to commit");
         return Err("no_changes".to_string());
     }
+    eprintln!("[DEBUG] Found staged changes to commit");
 
     // Commit
     let commit_output = git_command()
@@ -237,35 +250,52 @@ pub async fn revert_to_commit(
     .map_err(|e| format!("Task join error: {}", e))?
 }
 
-/// Ensure .vstworkshop/ is not tracked by git (for existing projects)
+/// Ensure non-source files are not tracked by git (for existing projects)
+/// This adds patterns to .gitignore and removes them from tracking if already tracked
 pub fn ensure_vstworkshop_ignored(path: &str) -> Result<(), String> {
-    // Check if .gitignore exists and contains .vstworkshop/
     let gitignore_path = format!("{}/.gitignore", path);
-    let mut needs_update = true;
+    let mut content = std::fs::read_to_string(&gitignore_path).unwrap_or_default();
+    let mut updated = false;
 
-    if let Ok(content) = std::fs::read_to_string(&gitignore_path) {
-        if content.contains(".vstworkshop/") || content.contains(".vstworkshop") {
-            needs_update = false;
+    // Patterns that should be ignored (not versioned as source code)
+    let ignore_patterns = [
+        (".vstworkshop/", "# App state (chat history, sessions) - not source code"),
+        (".claude/", "# Claude working files - not versioned source code"),
+        ("CLAUDE.md", ""),
+        ("docs/", ""),
+        ("plans/", ""),
+        ("*.plan.md", ""),
+    ];
+
+    for (pattern, comment) in &ignore_patterns {
+        // Check if pattern is already in .gitignore
+        if !content.contains(pattern) {
+            if !content.ends_with('\n') && !content.is_empty() {
+                content.push('\n');
+            }
+            // Add comment if provided and not already present
+            if !comment.is_empty() && !content.contains(comment) {
+                content.push_str(&format!("\n{}\n", comment));
+            }
+            content.push_str(&format!("{}\n", pattern));
+            updated = true;
         }
     }
 
-    if needs_update {
-        // Append to .gitignore
-        let mut content = std::fs::read_to_string(&gitignore_path).unwrap_or_default();
-        if !content.ends_with('\n') && !content.is_empty() {
-            content.push('\n');
-        }
-        content.push_str("\n# App state (chat history, sessions) - not source code\n.vstworkshop/\n");
+    if updated {
         std::fs::write(&gitignore_path, content)
             .map_err(|e| format!("Failed to update .gitignore: {}", e))?;
     }
 
-    // Remove .vstworkshop from git tracking if it's tracked
-    let _ = git_command()
-        .current_dir(path)
-        .args(["rm", "-r", "--cached", ".vstworkshop/"])
-        .output();
-    // Ignore errors - it might not be tracked
+    // Remove these from git tracking if they're tracked
+    let paths_to_untrack = [".vstworkshop/", ".claude/", "CLAUDE.md", "docs/", "plans/"];
+    for untrack_path in &paths_to_untrack {
+        let _ = git_command()
+            .current_dir(path)
+            .args(["rm", "-r", "--cached", untrack_path])
+            .output();
+        // Ignore errors - might not be tracked
+    }
 
     Ok(())
 }

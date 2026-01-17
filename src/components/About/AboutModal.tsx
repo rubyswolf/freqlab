@@ -132,7 +132,7 @@ export function AboutModal({ isOpen, onClose }: AboutModalProps) {
                         </svg>
                     </a>
                     <a
-                        href="https://nanoshrineinteractive.com"
+                        href="https://nanoshrine.com"
                         target="_blank"
                         rel="noopener noreferrer"
                         className="p-2.5 bg-bg-tertiary hover:bg-bg-elevated rounded-lg transition-colors"
@@ -265,7 +265,7 @@ export function AboutModal({ isOpen, onClose }: AboutModalProps) {
                 </div>
 
                 {/* Version */}
-                <p className="text-text-muted text-xs">Version 0.2.0</p>
+                <p className="text-text-muted text-xs">Version 0.2.1</p>
             </div>
         </Modal>
     )
