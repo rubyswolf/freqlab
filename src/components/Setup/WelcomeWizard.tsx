@@ -3,6 +3,7 @@ import { PrerequisitesCheck } from './PrerequisitesCheck'
 import { DawSetup } from './DawSetup'
 import { useSettingsStore } from '../../stores/settingsStore'
 import { useTourStore } from '../../stores/tourStore'
+import { Modal } from '../Common/Modal'
 
 type WizardStep = 'welcome' | 'prerequisites' | 'daw-setup' | 'complete'
 
@@ -50,6 +51,8 @@ function FeatureCard({ icon, title, description }: { icon: React.ReactNode; titl
 
 export function WelcomeWizard() {
     const [step, setStep] = useState<WizardStep>('welcome')
+    const [termsAccepted, setTermsAccepted] = useState(false)
+    const [termsModalOpen, setTermsModalOpen] = useState(false)
     const setSetupComplete = useSettingsStore((state) => state.setSetupComplete)
     const startTour = useTourStore((state) => state.startTour)
 
@@ -161,15 +164,116 @@ export function WelcomeWizard() {
                                 </p>
                             </div>
 
+                            {/* Terms acceptance */}
+                            <label className="flex items-start gap-3 cursor-pointer group">
+                                <div className="relative flex-shrink-0 mt-0.5">
+                                    <input
+                                        type="checkbox"
+                                        checked={termsAccepted}
+                                        onChange={(e) => setTermsAccepted(e.target.checked)}
+                                        className="sr-only peer"
+                                    />
+                                    <div className="w-4 h-4 border border-border rounded bg-bg-tertiary peer-checked:bg-accent peer-checked:border-accent transition-colors flex items-center justify-center">
+                                        {termsAccepted && (
+                                            <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                                                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                                            </svg>
+                                        )}
+                                    </div>
+                                </div>
+                                <span className="text-xs text-text-secondary leading-relaxed">
+                                    I agree to the{' '}
+                                    <button
+                                        type="button"
+                                        onClick={(e) => {
+                                            e.preventDefault()
+                                            setTermsModalOpen(true)
+                                        }}
+                                        className="text-accent hover:underline"
+                                    >
+                                        Terms of Use
+                                    </button>
+                                </span>
+                            </label>
+
                             {/* CTA Button */}
                             <button
                                 onClick={() => setStep('prerequisites')}
-                                className="w-full py-2.5 px-4 text-sm bg-accent hover:bg-accent-hover text-white font-medium rounded-lg transition-all duration-200 hover:shadow-lg hover:shadow-accent/25"
+                                disabled={!termsAccepted}
+                                className={`w-full py-2.5 px-4 text-sm font-medium rounded-lg transition-all duration-200 ${
+                                    termsAccepted
+                                        ? 'bg-accent hover:bg-accent-hover text-white hover:shadow-lg hover:shadow-accent/25'
+                                        : 'bg-bg-tertiary text-text-muted cursor-not-allowed'
+                                }`}
                             >
                                 Get Started
                             </button>
                         </div>
                     )}
+
+                    {/* Terms Modal */}
+                    <Modal isOpen={termsModalOpen} onClose={() => setTermsModalOpen(false)} title="Terms of Use" size="md">
+                        <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-2">
+                            <div>
+                                <h4 className="text-sm font-semibold text-text-primary mb-1">License</h4>
+                                <p className="text-sm text-text-secondary">
+                                    freqlab is licensed under GPL-3.0. Source code is available at{' '}
+                                    <a
+                                        href="https://github.com/jamesontucker/freqlab"
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="text-accent hover:underline"
+                                    >
+                                        GitHub
+                                    </a>
+                                    .
+                                </p>
+                            </div>
+
+                            <div>
+                                <h4 className="text-sm font-semibold text-text-primary mb-1">Plugin Output</h4>
+                                <p className="text-sm text-text-secondary">
+                                    VST3 plugins must be GPL-3.0 due to VST3 binding licensing. You may sell plugins but
+                                    must provide source code on request. CLAP-only plugins are not subject to this requirement.
+                                </p>
+                            </div>
+
+                            <div>
+                                <h4 className="text-sm font-semibold text-text-primary mb-1">No Warranty</h4>
+                                <p className="text-sm text-text-secondary">
+                                    Provided "as is" without warranty. Use at your own risk. Not responsible for system
+                                    issues, AI-generated code errors, or any damages.
+                                </p>
+                            </div>
+
+                            <div>
+                                <h4 className="text-sm font-semibold text-text-primary mb-1">Third-Party Assets</h4>
+                                <p className="text-sm text-text-secondary">
+                                    You are responsible for ensuring you have proper rights and licenses for any assets
+                                    included in your plugins (fonts, images, samples, etc.). Do not use copyrighted or
+                                    commercially-licensed materials without appropriate permissions.
+                                </p>
+                            </div>
+
+                            <div>
+                                <h4 className="text-sm font-semibold text-text-primary mb-1">AI-Generated Code</h4>
+                                <p className="text-sm text-text-secondary">
+                                    Claude generates the plugin code. While templates include safety measures, always
+                                    review generated code before distributing. You are responsible for understanding
+                                    and verifying the code in your plugins.
+                                </p>
+                            </div>
+
+                            <div className="pt-2">
+                                <button
+                                    onClick={() => setTermsModalOpen(false)}
+                                    className="w-full py-2 px-4 text-sm bg-accent hover:bg-accent-hover text-white font-medium rounded-lg transition-colors"
+                                >
+                                    Close
+                                </button>
+                            </div>
+                        </div>
+                    </Modal>
 
                     {step === 'prerequisites' && <PrerequisitesCheck onComplete={() => setStep('daw-setup')} />}
 

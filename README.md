@@ -169,6 +169,16 @@ xattr -cr /path/to/YourPlugin.vst3
 
 ---
 
+## Disclaimer
+
+Provided "as is" without warranty. Use at your own risk. Not responsible for system issues, AI-generated code errors, or any damages.
+
+### Third-Party Assets
+
+You are responsible for ensuring you have the proper rights and licenses for any assets you include in your plugins — fonts, images, samples, icons, etc. Do not use copyrighted or commercially-licensed materials without appropriate permissions.
+
+---
+
 ## License
 
 freqlab is **GPL-3.0**. See [LICENSE](LICENSE).

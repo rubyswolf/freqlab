@@ -260,12 +260,21 @@ export function AboutModal({ isOpen, onClose }: AboutModalProps) {
                                     issues, AI-generated code errors, or any damages.
                                 </p>
                             </div>
+                            <div>
+                                <h4 className="text-xs font-semibold text-text-primary uppercase tracking-wide mb-0.5">
+                                    Third-Party Assets
+                                </h4>
+                                <p className="text-xs text-text-secondary">
+                                    You are responsible for ensuring you have proper rights and licenses for any assets
+                                    included in your plugins (fonts, images, samples, etc.).
+                                </p>
+                            </div>
                         </div>
                     )}
                 </div>
 
                 {/* Version */}
-                <p className="text-text-muted text-xs">Version 0.2.2</p>
+                <p className="text-text-muted text-xs">Version 0.2.3</p>
             </div>
         </Modal>
     )
