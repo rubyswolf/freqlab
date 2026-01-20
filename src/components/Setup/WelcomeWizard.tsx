@@ -217,7 +217,7 @@ export function WelcomeWizard() {
                             <div>
                                 <h4 className="text-sm font-semibold text-text-primary mb-1">License</h4>
                                 <p className="text-sm text-text-secondary">
-                                    freqlab is licensed under GPL-3.0. Source code is available at{' '}
+                                    freqlab is licensed under PolyForm Shield 1.0.0. Source code is available on{' '}
                                     <a
                                         href="https://github.com/jamesontucker/freqlab"
                                         target="_blank"

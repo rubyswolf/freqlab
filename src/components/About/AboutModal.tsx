@@ -231,7 +231,7 @@ export function AboutModal({ isOpen, onClose }: AboutModalProps) {
                                     License
                                 </h4>
                                 <p className="text-xs text-text-secondary">
-                                    freqlab is licensed under GPL-3.0. Source available at{' '}
+                                    freqlab is licensed under PolyForm Shield 1.0.0. Source available on{' '}
                                     <a
                                         href="https://github.com/jamesontucker/freqlab"
                                         target="_blank"
