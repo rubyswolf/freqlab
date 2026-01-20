@@ -21,13 +21,6 @@
 
 ---
 
-> [!NOTE]
-> This is a personal side project that I initially built for my wife who's a sound designer and is **not consistently maintained**. It was a vibe experiment, so **use as-is**.
->
-> **Also** go hire a dev if you're looking to take plugin development seriously ;)
-
----
-
 ## What is freqlab?
 
 Most AI apps are trying to replace traditional music/audio creative flows (ie. suno and other exploitative gen-ai), I wanted to create something that genuinely assists their creative process instead of replacing it.
@@ -184,6 +177,7 @@ You are responsible for ensuring you have the proper rights and licenses for any
 freqlab is licensed under the [PolyForm Shield License 1.0.0](https://polyformproject.org/licenses/shield/1.0.0/). See [LICENSE](LICENSE).
 
 **What this means:**
+
 - You can use, modify, and distribute freqlab
 - You **cannot** use it to create a competing product or service
 - Commercial use is allowed (you can use freqlab in your business)
