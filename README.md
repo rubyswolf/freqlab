@@ -12,7 +12,7 @@
     <img src="https://img.shields.io/github/v/release/jamesontucker/freqlab?style=flat-square&color=2DA86E&cacheSeconds=300" alt="Latest Release">
   </a>
   <a href="https://github.com/jamesontucker/freqlab/blob/main/LICENSE">
-    <img src="https://img.shields.io/github/license/jamesontucker/freqlab?style=flat-square&color=2DA86E" alt="License">
+    <img src="https://img.shields.io/badge/license-PolyForm%20Shield-2DA86E?style=flat-square" alt="License">
   </a>
   <a href="https://freqlab.app/docs">
     <img src="https://img.shields.io/badge/docs-freqlab.app-2DA86E?style=flat-square" alt="Documentation">
@@ -181,16 +181,21 @@ You are responsible for ensuring you have the proper rights and licenses for any
 
 ## License
 
-freqlab is **GPL-3.0**. See [LICENSE](LICENSE).
+freqlab is licensed under the [PolyForm Shield License 1.0.0](https://polyformproject.org/licenses/shield/1.0.0/). See [LICENSE](LICENSE).
+
+**What this means:**
+- You can use, modify, and distribute freqlab
+- You **cannot** use it to create a competing product or service
+- Commercial use is allowed (you can use freqlab in your business)
 
 ### Plugin Licensing
 
-Plugins use [nih-plug](https://github.com/robbert-vdh/nih-plug):
+Plugins you create use [nih-plug](https://github.com/robbert-vdh/nih-plug):
 
 - **nih-plug framework** - ISC license
 - **VST3 bindings** - GPL-3.0
 
-**What this means:**
+**What this means for your plugins:**
 
 - VST3 plugins must be GPL-3.0 (provide source on request)
 - CLAP-only plugins have no such requirement
