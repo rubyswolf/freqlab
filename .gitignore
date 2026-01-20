@@ -32,4 +32,4 @@ Thumbs.db
 coverage/
 
 # Planning docs
-.docs/
+.docs/*
