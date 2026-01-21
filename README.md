@@ -4,7 +4,7 @@
 <h1 align="center">freqlab</h1>
 
 <p align="center">
-  <strong>A macOS app for creating VST3/CLAP audio plugins through conversation.</strong>
+  <strong>A cross platform app for creating VST3/CLAP audio plugins through conversation.</strong>
 </p>
 
 <p align="center">
@@ -109,11 +109,14 @@ Choose your starting point:
 ---
 
 ## Prerequisites
-
-- **macOS 12+** (Monterey or later)
+- OS
+  - **macOS 12+** (Monterey or later)
+  - **Windows** (10 or later)
 - **Xcode Command Line Tools** - `xcode-select --install`
 - **Rust** - via [rustup](https://rustup.rs/)
-- **Claude Code CLI** - requires an active Anthropic subscription
+- Agent
+  - **Claude Code CLI** - requires an active Anthropic subscription
+  - **OpenAI Codex CLI** - requires an active OpenAI subscription
 
 > [!NOTE]
 > freqlab checks these on first launch and guides you through setup.
@@ -158,7 +161,7 @@ xattr -cr /path/to/YourPlugin.vst3
 ### Code Review
 
 > [!CAUTION]
-> Claude generates the plugin code. While templates include safety limiters, always review generated code before distributing. You're generating Rust, so make sure to understand what it's doing!
+> An AI agent generates the plugin code. While templates include safety limiters, always review generated code before distributing. You're generating Rust, so make sure to understand what it's doing!
 
 ---
 
