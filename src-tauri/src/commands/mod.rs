@@ -37,9 +37,14 @@ pub fn get_extended_path() -> String {
         format!("{}\\AppData\\Local\\npm", home),
         format!("{}\\AppData\\Roaming\\pnpm", home),
         format!("{}\\AppData\\Local\\Yarn\\bin", home),
+        format!("{}\\AppData\\Local\\Programs\\Microsoft VS Code\\bin", home),
+        format!("{}\\AppData\\Local\\Programs\\VSCodium\\bin", home),
+        format!("{}\\AppData\\Local\\Programs\\Cursor\\resources\\app\\bin", home),
         format!("{}\\AppData\\Local\\Microsoft\\WindowsApps", home),
         "C:\\Program Files\\nodejs".to_string(),
         "C:\\Program Files\\Git\\bin".to_string(),
+        "C:\\Program Files\\Microsoft VS Code\\bin".to_string(),
+        "C:\\Program Files (x86)\\Microsoft VS Code\\bin".to_string(),
     ];
 
     if !appdata.is_empty() {

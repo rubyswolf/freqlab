@@ -572,6 +572,7 @@ export function ChatPanel({ project, onVersionChange }: ChatPanelProps) {
         model: aiSettings.model,
         customInstructions: aiSettings.customInstructions,
         agentVerbosity: aiSettings.agentVerbosity,
+        userMode: aiSettings.userMode,
       });
 
       // Calculate next version number if this response has a commit (files were changed)

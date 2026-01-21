@@ -249,6 +249,7 @@ pub async fn send_to_codex(
     _model: Option<String>,
     custom_instructions: Option<String>,
     agent_verbosity: Option<String>,
+    user_mode: Option<String>,
     window: tauri::Window,
 ) -> Result<CodexResponse, String> {
     // Ensure git is initialized for this project (handles existing projects)
@@ -277,16 +278,38 @@ pub async fn send_to_codex(
     let ui_framework = metadata.as_ref().and_then(|m| m.ui_framework.as_deref());
 
     // Build context with components info and project-specific CLAUDE.md
-    let context = build_context(&project_name, &description, &project_path, components, is_first_message, ui_framework);
+    let context = build_context(
+        &project_name,
+        &description,
+        &project_path,
+        components,
+        is_first_message,
+        ui_framework,
+        user_mode.as_deref(),
+    );
 
     // Get verbosity style (default to balanced)
     let verbosity = agent_verbosity.as_deref().unwrap_or("balanced");
 
+    let user_mode_hint = match user_mode.as_deref() {
+        Some("developer") => "[User Mode: Developer - share code and DSP details when helpful; keep it concise]",
+        _ => "[User Mode: Producer - keep explanations high-level unless asked for code details]",
+    };
+
     // Prepend style hint to message
     let styled_message = match verbosity {
-        "direct" => format!("[Response Style: Direct - minimal questions, implement immediately, 1-3 sentences max]\n\n{}", message),
-        "thorough" => format!("[Response Style: Thorough - ask clarifying questions, explore options before implementing]\n\n{}", message),
-        _ => format!("[Response Style: Balanced - ask 1-2 key questions if needed, then implement]\n\n{}", message),
+        "direct" => format!(
+            "{}\n[Response Style: Direct - minimal questions, implement immediately, 1-3 sentences max]\n\n{}",
+            user_mode_hint, message
+        ),
+        "thorough" => format!(
+            "{}\n[Response Style: Thorough - ask clarifying questions, explore options before implementing]\n\n{}",
+            user_mode_hint, message
+        ),
+        _ => format!(
+            "{}\n[Response Style: Balanced - ask 1-2 key questions if needed, then implement]\n\n{}",
+            user_mode_hint, message
+        ),
     };
 
     // Build prompt - include full context on first message
@@ -343,11 +366,7 @@ pub async fn send_to_codex(
         args.push("exec".to_string());
         args.push("resume".to_string());
         args.push("--json".to_string());
-        args.push("--color".to_string());
-        args.push("never".to_string());
         args.push("--dangerously-bypass-approvals-and-sandbox".to_string());
-        args.push("--output-last-message".to_string());
-        args.push(last_message_path.to_string_lossy().to_string());
         args.push(session_id.clone());
         args.push("-".to_string());
         eprintln!("[DEBUG] Resuming Codex session: {}", session_id);

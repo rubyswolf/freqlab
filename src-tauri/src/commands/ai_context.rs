@@ -30,6 +30,7 @@ pub fn build_context(
     components: Option<&Vec<String>>,
     is_first_message: bool,
     ui_framework: Option<&str>,
+    user_mode: Option<&str>,
 ) -> String {
     // Get path to local nih-plug repo for documentation
     let nih_plug_docs_path = super::projects::get_nih_plug_docs_path();
@@ -88,7 +89,8 @@ Description: {description}
         description = description,
     ));
 
-    context.push_str(r#"
+    context.push_str(
+        r#"
 
 ## 1. NEVER SAY "BUILD"
 The app has a Build button. Using "build" confuses users into thinking you're doing their build.
@@ -99,6 +101,24 @@ The app has a Build button. Using "build" confuses users into thinking you're do
 - DO NOT: "The build passed"
 - DO: "The code compiles" (only if user asks)
 You are implementing code. The USER clicks Build. NEVER say "build" in any form.
+"#,
+    );
+
+    if user_mode == Some("developer") {
+        context.push_str(
+            r#"
+
+## 2. BALANCE FEATURES AND TECHNICAL DETAIL
+The user is a programmer/audio engineer. You may discuss code, DSP, and architecture when helpful.
+- Include file/function names or brief code snippets when they clarify a change
+- Keep explanations concise and avoid unnecessary jargon
+- If the user asks for sound/design implications, explain those too
+- Do not over-explain basics unless asked
+"#,
+        );
+    } else {
+        context.push_str(
+            r#"
 
 ## 2. TALK ABOUT FEATURES, NOT CODE (unless they specifically ask)
 The user is a producer/sound designer, not a programmer.
@@ -108,6 +128,12 @@ The user is a producer/sound designer, not a programmer.
 - DO NOT: "Let me rewrite lib.rs..." -> DO: Just do it silently, then say what feature changed
 Talk about SOUND, not code. filters/oscillators/gain/etc = good. structs/functions/Rust = bad.
 If user asks "how does this work" or "show me the code" then explain code. Otherwise, features only.
+"#,
+        );
+    }
+
+    context.push_str(
+        r#"
 
 ## 3. BE CONCISE
 Say what you did in 1-2 sentences max. Don't narrate your process.
@@ -137,7 +163,8 @@ Before implementing ANY audio feature, you MUST check if a relevant skill exists
 
 ---
 
-"#);
+"#,
+    );
 
     context.push_str(&format!(r#"## nih-plug Documentation
 

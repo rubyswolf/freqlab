@@ -1,5 +1,5 @@
 import { useSettingsStore } from '../../stores/settingsStore';
-import type { ClaudeModel, AgentVerbosity, AIProvider } from '../../types';
+import type { ClaudeModel, AgentVerbosity, AIProvider, UserMode } from '../../types';
 
 interface ModelOption {
   id: ClaudeModel;
@@ -30,8 +30,21 @@ const providerOptions: Array<{ id: AIProvider; label: string; description: strin
   { id: 'codex', label: 'Codex', description: 'Uses Codex CLI with local config' },
 ];
 
+const userModeOptions: Array<{ id: UserMode; label: string; description: string }> = [
+  { id: 'producer', label: 'Producer', description: 'Keep things high-level unless asked' },
+  { id: 'developer', label: 'Developer', description: 'Comfortable with code and DSP details' },
+];
+
 export function AISettings() {
-  const { aiSettings, setProvider, setChatStyle, setModel, setCustomInstructions, setAgentVerbosity } = useSettingsStore();
+  const {
+    aiSettings,
+    setProvider,
+    setUserMode,
+    setChatStyle,
+    setModel,
+    setCustomInstructions,
+    setAgentVerbosity,
+  } = useSettingsStore();
   const provider = aiSettings.provider;
 
   return (
@@ -58,6 +71,33 @@ export function AISettings() {
                 index > 0 ? 'border-l border-border' : ''
               } ${
                 provider === option.id
+                  ? 'bg-accent text-white'
+                  : 'bg-bg-primary text-text-secondary hover:text-text-primary'
+              }`}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Chat Style - inline toggle */}
+      <div className="flex items-center justify-between">
+        <div>
+          <label className="block text-sm font-medium text-text-primary">Audience</label>
+          <p className="text-xs text-text-muted">
+            {userModeOptions.find(m => m.id === aiSettings.userMode)?.description}
+          </p>
+        </div>
+        <div className="flex rounded-lg border border-border overflow-hidden">
+          {userModeOptions.map((option, index) => (
+            <button
+              key={option.id}
+              onClick={() => setUserMode(option.id)}
+              className={`px-3 py-1.5 text-sm transition-colors ${
+                index > 0 ? 'border-l border-border' : ''
+              } ${
+                aiSettings.userMode === option.id
                   ? 'bg-accent text-white'
                   : 'bg-bg-primary text-text-secondary hover:text-text-primary'
               }`}

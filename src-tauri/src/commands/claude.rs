@@ -324,6 +324,7 @@ fn build_context(
     components: Option<&Vec<String>>,
     is_first_message: bool,
     ui_framework: Option<&str>,
+    user_mode: Option<&str>,
 ) -> String {
     // Get path to local nih-plug repo for documentation
     let nih_plug_docs_path = super::projects::get_nih_plug_docs_path();
@@ -382,7 +383,8 @@ Description: {description}
         description = description,
     ));
 
-    context.push_str(r#"
+    if user_mode != Some("developer") {
+        context.push_str(r#"
 
 ## 1. NEVER SAY "BUILD"
 The app has a Build button. Using "build" confuses users into thinking you're doing their build.
@@ -429,6 +431,56 @@ Before implementing ANY audio feature, you MUST check if a relevant skill exists
 ---
 
 "#);
+    } else {
+        context.push_str(r#"
+
+## 1. NEVER SAY "BUILD"
+The app has a Build button. Using "build" confuses users into thinking you're doing their build.
+- DO NOT: "Let me build..." / "I'll build..." / "Building..."
+- DO: "Let me implement..."
+- DO NOT: "Build successful" / "Build complete"
+- DO: "Done!" or "Ready for you to try"
+- DO NOT: "The build passed"
+- DO: "The code compiles" (only if user asks)
+You are implementing code. The USER clicks Build. NEVER say "build" in any form.
+
+## 2. BALANCE FEATURES AND TECHNICAL DETAIL
+The user is a programmer/audio engineer. You may discuss code, DSP, and architecture when helpful.
+- Include file/function names or brief code snippets when they clarify a change
+- Keep explanations concise and avoid unnecessary jargon
+- If the user asks for sound/design implications, explain those too
+- Do not over-explain basics unless asked
+
+## 3. BE CONCISE
+Say what you did in 1-2 sentences max. Don't narrate your process.
+- DO NOT: "First let me read the file... now I'll add... now let me check..."
+- DO: [Do the work silently, then] "Added the filter with cutoff and resonance controls."
+
+## 4. INTERNAL FILES ARE SECRET
+Never mention CLAUDE.md, .vstworkshop/, or metadata files to the user. Update them silently.
+
+## 5. ALWAYS CHECK YOUR SKILLS
+Before implementing ANY audio feature, you MUST check if a relevant skill exists in `.claude/commands/`.
+
+**Skill check is MANDATORY for:**
+- DSP/audio processing -> invoke `/dsp-safety` first
+- Filters, EQ, dynamics -> `/dsp-safety` has anti-hallucination rules
+- Effects (reverb, delay, chorus, etc.) -> `/effect-patterns`
+- Instruments (synths, samplers) -> `/instrument-patterns`
+- UI work -> `/webview-ui` or `/egui-ui` (whichever this project uses)
+- Presets -> `/preset-system`
+- Polyphony -> `/polyphony`
+- Envelopes -> `/adsr-envelope`
+- LFOs -> `/lfo`
+- Oversampling -> `/oversampling`
+- Sidechain -> `/sidechain-input`
+
+**The skill contains patterns that prevent common mistakes.** Skipping skills = bugs.
+
+---
+
+"#);
+    }
 
     context.push_str(&format!(r#"## nih-plug Documentation
 
@@ -482,6 +534,7 @@ pub async fn send_to_claude(
     model: Option<String>,
     custom_instructions: Option<String>,
     agent_verbosity: Option<String>,
+    user_mode: Option<String>,
     window: tauri::Window,
 ) -> Result<ClaudeResponse, String> {
     // Ensure git is initialized for this project (handles existing projects)
@@ -511,16 +564,38 @@ pub async fn send_to_claude(
     let ui_framework = metadata.as_ref().and_then(|m| m.ui_framework.as_deref());
 
     // Build context with components info and project-specific CLAUDE.md
-    let context = build_context(&project_name, &description, &project_path, components, is_first_message, ui_framework);
+    let context = build_context(
+        &project_name,
+        &description,
+        &project_path,
+        components,
+        is_first_message,
+        ui_framework,
+        user_mode.as_deref(),
+    );
 
     // Get verbosity style (default to balanced)
     let verbosity = agent_verbosity.as_deref().unwrap_or("balanced");
 
+    let user_mode_hint = match user_mode.as_deref() {
+        Some("developer") => "[User Mode: Developer - share code and DSP details when helpful; keep it concise]",
+        _ => "[User Mode: Producer - keep explanations high-level unless asked for code details]",
+    };
+
     // Prepend style hint to message (reinforces on every turn, even resumed sessions)
     let styled_message = match verbosity {
-        "direct" => format!("[Response Style: Direct - minimal questions, implement immediately, 1-3 sentences max]\n\n{}", message),
-        "thorough" => format!("[Response Style: Thorough - ask clarifying questions, explore options before implementing]\n\n{}", message),
-        _ => format!("[Response Style: Balanced - ask 1-2 key questions if needed, then implement]\n\n{}", message),
+        "direct" => format!(
+            "{}\n[Response Style: Direct - minimal questions, implement immediately, 1-3 sentences max]\n\n{}",
+            user_mode_hint, message
+        ),
+        "thorough" => format!(
+            "{}\n[Response Style: Thorough - ask clarifying questions, explore options before implementing]\n\n{}",
+            user_mode_hint, message
+        ),
+        _ => format!(
+            "{}\n[Response Style: Balanced - ask 1-2 key questions if needed, then implement]\n\n{}",
+            user_mode_hint, message
+        ),
     };
 
     // Build args - include --resume if we have an existing session

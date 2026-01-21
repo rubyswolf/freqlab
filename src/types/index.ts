@@ -78,11 +78,14 @@ export type ClaudeModel = 'haiku' | 'sonnet' | 'opus';
 
 export type AIProvider = 'claude' | 'codex';
 
+export type UserMode = 'producer' | 'developer';
+
 // Controls how verbose/detailed the agent is in responses
 export type AgentVerbosity = 'thorough' | 'balanced' | 'direct';
 
 export interface AISettings {
   provider: AIProvider;
+  userMode: UserMode;
   chatStyle: ChatStyle;
   model: ClaudeModel;
   customInstructions: string;
